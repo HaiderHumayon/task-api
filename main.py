@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -7,6 +7,11 @@ app = FastAPI()
 
 class TaskCreate(BaseModel):
     title: str | None = None
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = None
+    done: bool | None = None
 
 
 tasks = [
@@ -66,3 +71,55 @@ def create_task(task_data: TaskCreate):
     tasks.append(new_task)
 
     return new_task
+
+
+@app.put("/tasks/{task_id}")
+def update_task(task_id: int, task_data: TaskUpdate):
+    provided_fields = task_data.model_fields_set
+
+    if not provided_fields:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Provide title, done, or both"},
+        )
+
+    if "title" in provided_fields:
+        if task_data.title is None or not task_data.title.strip():
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Title cannot be empty"},
+            )
+
+    if "done" in provided_fields and task_data.done is None:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Done must be true or false"},
+        )
+
+    for task in tasks:
+        if task["id"] == task_id:
+            if "title" in provided_fields:
+                task["title"] = task_data.title.strip()
+
+            if "done" in provided_fields:
+                task["done"] = task_data.done
+
+            return task
+
+    return JSONResponse(
+        status_code=404,
+        content={"error": f"Task {task_id} not found"},
+    )
+
+
+@app.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int):
+    for index, task in enumerate(tasks):
+        if task["id"] == task_id:
+            tasks.pop(index)
+            return Response(status_code=204)
+
+    return JSONResponse(
+        status_code=404,
+        content={"error": f"Task {task_id} not found"},
+    )
