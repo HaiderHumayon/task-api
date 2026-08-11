@@ -1,13 +1,67 @@
+import sqlite3
+
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+
 app = FastAPI(
     title="Task API",
     version="1.0",
-    description="A simple in-memory CRUD API for creating, reading, updating, and deleting tasks.",
+    description="A CRUD API for creating, reading, updating, and deleting tasks.",
 )
 
+
+# -------------------------
+# Database setup - Stage 0
+# -------------------------
+
+DATABASE_NAME = "tasks.db"
+
+
+def get_db_connection():
+    connection = sqlite3.connect(DATABASE_NAME)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def initialize_database():
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            done INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+
+    cursor.execute("SELECT COUNT(*) FROM tasks")
+    task_count = cursor.fetchone()[0]
+
+    if task_count == 0:
+        cursor.executemany(
+            "INSERT INTO tasks (title, done) VALUES (?, ?)",
+            [
+                ("Learn HTTP", 0),
+                ("Build a CRUD API", 0),
+                ("Test with Swagger UI", 1),
+            ],
+        )
+
+    connection.commit()
+    connection.close()
+
+
+initialize_database()
+
+
+# -------------------------
+# Request models
+# -------------------------
 
 class TaskCreate(BaseModel):
     title: str | None = None
@@ -18,12 +72,21 @@ class TaskUpdate(BaseModel):
     done: bool | None = None
 
 
+# -------------------------
+# Existing in-memory data
+# We will remove this in later stages
+# -------------------------
+
 tasks = [
     {"id": 1, "title": "Learn HTTP", "done": False},
     {"id": 2, "title": "Build a CRUD API", "done": False},
     {"id": 3, "title": "Test with Swagger UI", "done": True},
 ]
 
+
+# -------------------------
+# API endpoints
+# -------------------------
 
 @app.get("/", summary="Show API information")
 def read_root():
