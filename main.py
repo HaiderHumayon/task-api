@@ -13,7 +13,7 @@ app = FastAPI(
 
 
 # -------------------------
-# Database setup - Stage 0
+# Database setup
 # -------------------------
 
 DATABASE_NAME = "tasks.db"
@@ -59,6 +59,14 @@ def initialize_database():
 initialize_database()
 
 
+def row_to_task(row):
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "done": bool(row["done"]),
+    }
+
+
 # -------------------------
 # Request models
 # -------------------------
@@ -73,8 +81,8 @@ class TaskUpdate(BaseModel):
 
 
 # -------------------------
-# Existing in-memory data
-# We will remove this in later stages
+# Temporary in-memory data
+# POST, PUT and DELETE still use this until later stages
 # -------------------------
 
 tasks = [
@@ -104,19 +112,35 @@ def health_check():
 
 @app.get("/tasks", summary="List all tasks")
 def get_tasks():
-    return tasks
+    connection = get_db_connection()
+
+    rows = connection.execute(
+        "SELECT * FROM tasks"
+    ).fetchall()
+
+    connection.close()
+
+    return [row_to_task(row) for row in rows]
 
 
 @app.get("/tasks/{task_id}", summary="Get one task by ID")
 def get_task(task_id: int):
-    for task in tasks:
-        if task["id"] == task_id:
-            return task
+    connection = get_db_connection()
 
-    return JSONResponse(
-        status_code=404,
-        content={"error": f"Task {task_id} not found"},
-    )
+    row = connection.execute(
+        "SELECT * FROM tasks WHERE id = ?",
+        (task_id,),
+    ).fetchone()
+
+    connection.close()
+
+    if row is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Task not found"},
+        )
+
+    return row_to_task(row)
 
 
 @app.post("/tasks", status_code=201, summary="Create a new task")
