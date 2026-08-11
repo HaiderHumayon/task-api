@@ -81,18 +81,6 @@ class TaskUpdate(BaseModel):
 
 
 # -------------------------
-# Temporary in-memory data
-# POST, PUT and DELETE still use this until later stages
-# -------------------------
-
-tasks = [
-    {"id": 1, "title": "Learn HTTP", "done": False},
-    {"id": 2, "title": "Build a CRUD API", "done": False},
-    {"id": 3, "title": "Test with Swagger UI", "done": True},
-]
-
-
-# -------------------------
 # API endpoints
 # -------------------------
 
@@ -197,20 +185,44 @@ def update_task(task_id: int, task_data: TaskUpdate):
             content={"error": "Done must be true or false"},
         )
 
-    for task in tasks:
-        if task["id"] == task_id:
-            if "title" in provided_fields:
-                task["title"] = task_data.title.strip()
+    connection = get_db_connection()
 
-            if "done" in provided_fields:
-                task["done"] = task_data.done
+    existing_task = connection.execute(
+        "SELECT * FROM tasks WHERE id = ?",
+        (task_id,),
+    ).fetchone()
 
-            return task
+    if existing_task is None:
+        connection.close()
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Task not found"},
+        )
 
-    return JSONResponse(
-        status_code=404,
-        content={"error": f"Task {task_id} not found"},
+    new_title = existing_task["title"]
+    new_done = bool(existing_task["done"])
+
+    if "title" in provided_fields:
+        new_title = task_data.title.strip()
+
+    if "done" in provided_fields:
+        new_done = task_data.done
+
+    connection.execute(
+        "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
+        (new_title, int(new_done), task_id),
     )
+
+    connection.commit()
+
+    updated_task = connection.execute(
+        "SELECT * FROM tasks WHERE id = ?",
+        (task_id,),
+    ).fetchone()
+
+    connection.close()
+
+    return row_to_task(updated_task)
 
 
 @app.delete(
@@ -219,12 +231,21 @@ def update_task(task_id: int, task_data: TaskUpdate):
     summary="Delete a task",
 )
 def delete_task(task_id: int):
-    for index, task in enumerate(tasks):
-        if task["id"] == task_id:
-            tasks.pop(index)
-            return Response(status_code=204)
+    connection = get_db_connection()
 
-    return JSONResponse(
-        status_code=404,
-        content={"error": f"Task {task_id} not found"},
+    cursor = connection.execute(
+        "DELETE FROM tasks WHERE id = ?",
+        (task_id,),
     )
+
+    connection.commit()
+    deleted_rows = cursor.rowcount
+    connection.close()
+
+    if deleted_rows == 0:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Task not found"},
+        )
+
+    return Response(status_code=204)
