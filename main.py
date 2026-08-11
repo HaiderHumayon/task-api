@@ -151,17 +151,27 @@ def create_task(task_data: TaskCreate):
             content={"error": "Title is required"},
         )
 
-    next_id = max((task["id"] for task in tasks), default=0) + 1
+    title = task_data.title.strip()
 
-    new_task = {
-        "id": next_id,
-        "title": task_data.title.strip(),
-        "done": False,
-    }
+    connection = get_db_connection()
 
-    tasks.append(new_task)
+    cursor = connection.execute(
+        "INSERT INTO tasks (title, done) VALUES (?, ?)",
+        (title, 0),
+    )
 
-    return new_task
+    connection.commit()
+
+    new_id = cursor.lastrowid
+
+    row = connection.execute(
+        "SELECT * FROM tasks WHERE id = ?",
+        (new_id,),
+    ).fetchone()
+
+    connection.close()
+
+    return row_to_task(row)
 
 
 @app.put("/tasks/{task_id}", summary="Update an existing task")
