@@ -1,13 +1,14 @@
-import sqlite3
-
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from repository import (
+    create_task as repository_create_task,
+    delete_task as repository_delete_task,
     get_task as repository_get_task,
     get_tasks as repository_get_tasks,
-    initialize_database as initialize_postgres,
+    initialize_database,
+    update_task as repository_update_task,
 )
 
 
@@ -18,38 +19,8 @@ app = FastAPI(
 )
 
 
-# -------------------------
-# PostgreSQL setup
-# -------------------------
+initialize_database()
 
-initialize_postgres()
-
-
-# -------------------------
-# Temporary SQLite setup
-# POST, PUT and DELETE will move to Postgres in Stage 3
-# -------------------------
-
-DATABASE_NAME = "tasks.db"
-
-
-def get_db_connection():
-    connection = sqlite3.connect(DATABASE_NAME)
-    connection.row_factory = sqlite3.Row
-    return connection
-
-
-def row_to_task(row):
-    return {
-        "id": row["id"],
-        "title": row["title"],
-        "done": bool(row["done"]),
-    }
-
-
-# -------------------------
-# Request models
-# -------------------------
 
 class TaskCreate(BaseModel):
     title: str | None = None
@@ -59,10 +30,6 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     done: bool | None = None
 
-
-# -------------------------
-# API endpoints
-# -------------------------
 
 @app.get("/", summary="Show API information")
 def read_root():
@@ -104,27 +71,7 @@ def create_task(task_data: TaskCreate):
             content={"error": "Title is required"},
         )
 
-    title = task_data.title.strip()
-
-    connection = get_db_connection()
-
-    cursor = connection.execute(
-        "INSERT INTO tasks (title, done) VALUES (?, ?)",
-        (title, 0),
-    )
-
-    connection.commit()
-
-    new_id = cursor.lastrowid
-
-    row = connection.execute(
-        "SELECT * FROM tasks WHERE id = ?",
-        (new_id,),
-    ).fetchone()
-
-    connection.close()
-
-    return row_to_task(row)
+    return repository_create_task(task_data.title.strip())
 
 
 @app.put("/tasks/{task_id}", summary="Update an existing task")
@@ -150,22 +97,16 @@ def update_task(task_id: int, task_data: TaskUpdate):
             content={"error": "Done must be true or false"},
         )
 
-    connection = get_db_connection()
-
-    existing_task = connection.execute(
-        "SELECT * FROM tasks WHERE id = ?",
-        (task_id,),
-    ).fetchone()
+    existing_task = repository_get_task(task_id)
 
     if existing_task is None:
-        connection.close()
         return JSONResponse(
             status_code=404,
             content={"error": "Task not found"},
         )
 
     new_title = existing_task["title"]
-    new_done = bool(existing_task["done"])
+    new_done = existing_task["done"]
 
     if "title" in provided_fields:
         new_title = task_data.title.strip()
@@ -173,21 +114,13 @@ def update_task(task_id: int, task_data: TaskUpdate):
     if "done" in provided_fields:
         new_done = task_data.done
 
-    connection.execute(
-        "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
-        (new_title, int(new_done), task_id),
+    updated_task = repository_update_task(
+        task_id,
+        new_title,
+        new_done,
     )
 
-    connection.commit()
-
-    updated_task = connection.execute(
-        "SELECT * FROM tasks WHERE id = ?",
-        (task_id,),
-    ).fetchone()
-
-    connection.close()
-
-    return row_to_task(updated_task)
+    return updated_task
 
 
 @app.delete(
@@ -196,18 +129,9 @@ def update_task(task_id: int, task_data: TaskUpdate):
     summary="Delete a task",
 )
 def delete_task(task_id: int):
-    connection = get_db_connection()
+    deleted = repository_delete_task(task_id)
 
-    cursor = connection.execute(
-        "DELETE FROM tasks WHERE id = ?",
-        (task_id,),
-    )
-
-    connection.commit()
-    deleted_rows = cursor.rowcount
-    connection.close()
-
-    if deleted_rows == 0:
+    if not deleted:
         return JSONResponse(
             status_code=404,
             content={"error": "Task not found"},

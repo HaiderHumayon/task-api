@@ -73,3 +73,66 @@ def get_task(task_id):
 
     connection.close()
     return task
+
+
+def create_task(title):
+    connection = get_connection()
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO tasks (title, done)
+            VALUES (%s, %s)
+            RETURNING id, title, done
+            """,
+            (title, False),
+        )
+        task = cursor.fetchone()
+
+    connection.commit()
+    connection.close()
+
+    return task
+
+
+def update_task(task_id, title, done):
+    connection = get_connection()
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE tasks
+            SET title = %s, done = %s
+            WHERE id = %s
+            RETURNING id, title, done
+            """,
+            (title, done, task_id),
+        )
+
+        task = cursor.fetchone()
+
+    connection.commit()
+    connection.close()
+
+    return task
+
+
+def delete_task(task_id):
+    connection = get_connection()
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            DELETE FROM tasks
+            WHERE id = %s
+            RETURNING id
+            """,
+            (task_id,),
+        )
+
+        deleted_task = cursor.fetchone()
+
+    connection.commit()
+    connection.close()
+
+    return deleted_task is not None
