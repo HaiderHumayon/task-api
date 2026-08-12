@@ -4,6 +4,12 @@ from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from repository import (
+    get_task as repository_get_task,
+    get_tasks as repository_get_tasks,
+    initialize_database as initialize_postgres,
+)
+
 
 app = FastAPI(
     title="Task API",
@@ -13,7 +19,15 @@ app = FastAPI(
 
 
 # -------------------------
-# Database setup
+# PostgreSQL setup
+# -------------------------
+
+initialize_postgres()
+
+
+# -------------------------
+# Temporary SQLite setup
+# POST, PUT and DELETE will move to Postgres in Stage 3
 # -------------------------
 
 DATABASE_NAME = "tasks.db"
@@ -23,40 +37,6 @@ def get_db_connection():
     connection = sqlite3.connect(DATABASE_NAME)
     connection.row_factory = sqlite3.Row
     return connection
-
-
-def initialize_database():
-    connection = get_db_connection()
-    cursor = connection.cursor()
-
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY,
-            title TEXT NOT NULL,
-            done INTEGER NOT NULL DEFAULT 0
-        )
-        """
-    )
-
-    cursor.execute("SELECT COUNT(*) FROM tasks")
-    task_count = cursor.fetchone()[0]
-
-    if task_count == 0:
-        cursor.executemany(
-            "INSERT INTO tasks (title, done) VALUES (?, ?)",
-            [
-                ("Learn HTTP", 0),
-                ("Build a CRUD API", 0),
-                ("Test with Swagger UI", 1),
-            ],
-        )
-
-    connection.commit()
-    connection.close()
-
-
-initialize_database()
 
 
 def row_to_task(row):
@@ -100,35 +80,20 @@ def health_check():
 
 @app.get("/tasks", summary="List all tasks")
 def get_tasks():
-    connection = get_db_connection()
-
-    rows = connection.execute(
-        "SELECT * FROM tasks"
-    ).fetchall()
-
-    connection.close()
-
-    return [row_to_task(row) for row in rows]
+    return repository_get_tasks()
 
 
 @app.get("/tasks/{task_id}", summary="Get one task by ID")
 def get_task(task_id: int):
-    connection = get_db_connection()
+    task = repository_get_task(task_id)
 
-    row = connection.execute(
-        "SELECT * FROM tasks WHERE id = ?",
-        (task_id,),
-    ).fetchone()
-
-    connection.close()
-
-    if row is None:
+    if task is None:
         return JSONResponse(
             status_code=404,
             content={"error": "Task not found"},
         )
 
-    return row_to_task(row)
+    return task
 
 
 @app.post("/tasks", status_code=201, summary="Create a new task")

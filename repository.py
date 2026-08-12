@@ -46,3 +46,30 @@ def initialize_database():
 
     connection.commit()
     connection.close()
+
+
+def get_tasks():
+    connection = get_connection()
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT id, title, done FROM tasks ORDER BY id"
+        )
+        tasks = cursor.fetchall()
+
+    connection.close()
+    return tasks
+
+
+def get_task(task_id):
+    connection = get_connection()
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT id, title, done FROM tasks WHERE id = %s",
+            (task_id,),
+        )
+        task = cursor.fetchone()
+
+    connection.close()
+    return task
