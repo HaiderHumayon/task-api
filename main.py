@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Response
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from supabase_auth.errors import AuthApiError
 
 from supabase_client import supabase
 
@@ -33,6 +35,20 @@ class TaskUpdate(BaseModel):
     done: bool | None = None
 
 
+class AuthCredentials(BaseModel):
+    email: str | None = None
+    password: str | None = None
+
+
+def missing_credentials(credentials: AuthCredentials) -> bool:
+    return (
+        credentials.email is None
+        or not credentials.email.strip()
+        or credentials.password is None
+        or not credentials.password.strip()
+    )
+
+
 @app.get("/", summary="Show API information")
 def read_root():
     return {
@@ -45,6 +61,30 @@ def read_root():
 @app.get("/health", summary="Check API health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.post("/auth/signup", status_code=201, summary="Create a user account")
+def signup(credentials: AuthCredentials):
+    if missing_credentials(credentials):
+        return JSONResponse(status_code=400, content={"error": "Email and password are required"})
+    try:
+        response = supabase.auth.sign_up({"email": credentials.email.strip(), "password": credentials.password})
+    except AuthApiError as exc:
+        return JSONResponse(status_code=400, content={"error": exc.message})
+    return JSONResponse(status_code=201, content={"user": jsonable_encoder(response.user)})
+
+
+@app.post("/auth/login", summary="Log in and receive tokens")
+def login(credentials: AuthCredentials):
+    if missing_credentials(credentials):
+        return JSONResponse(status_code=400, content={"error": "Email and password are required"})
+    try:
+        response = supabase.auth.sign_in_with_password({"email": credentials.email.strip(), "password": credentials.password})
+    except AuthApiError:
+        return JSONResponse(status_code=401, content={"error": "Invalid login credentials"})
+    if response.session is None:
+        return JSONResponse(status_code=401, content={"error": "Invalid login credentials"})
+    return {"access_token": response.session.access_token, "refresh_token": response.session.refresh_token}
 
 
 @app.get("/tasks", summary="List all tasks")
