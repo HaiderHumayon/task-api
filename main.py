@@ -2,6 +2,8 @@ from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from supabase_client import supabase
+
 from repository import (
     create_task as repository_create_task,
     delete_task as repository_delete_task,
@@ -15,7 +17,7 @@ from repository import (
 app = FastAPI(
     title="Task API",
     version="1.0",
-    description="A CRUD API for creating, reading, updating, and deleting tasks.",
+    description="A CRUD API with PostgreSQL and Supabase authentication.",
 )
 
 
