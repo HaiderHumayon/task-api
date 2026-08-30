@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Header, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -85,6 +85,21 @@ def login(credentials: AuthCredentials):
     if response.session is None:
         return JSONResponse(status_code=401, content={"error": "Invalid login credentials"})
     return {"access_token": response.session.access_token, "refresh_token": response.session.refresh_token}
+
+
+@app.get("/public/info", summary="Read public information")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+
+@app.get("/protected/profile", summary="Read a protected profile")
+def protected_profile(authorization: str | None = Header(default=None)):
+    if not authorization:
+        return JSONResponse(status_code=401, content={"error": "Access token required"})
+    scheme, separator, token = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer" or not token.strip():
+        return JSONResponse(status_code=401, content={"error": "Access token required"})
+    return {"message": "Access token received"}
 
 
 @app.get("/tasks", summary="List all tasks")
