@@ -99,7 +99,14 @@ def protected_profile(authorization: str | None = Header(default=None)):
     scheme, separator, token = authorization.partition(" ")
     if not separator or scheme.lower() != "bearer" or not token.strip():
         return JSONResponse(status_code=401, content={"error": "Access token required"})
-    return {"message": "Access token received"}
+    try:
+        response = supabase.auth.get_user(token.strip())
+    except AuthApiError:
+        return JSONResponse(status_code=401, content={"error": "Invalid or expired token"})
+    if response.user is None:
+        return JSONResponse(status_code=401, content={"error": "Invalid or expired token"})
+    user = response.user
+    return {"id": str(user.id), "email": user.email, "created_at": jsonable_encoder(user.created_at)}
 
 
 @app.get("/tasks", summary="List all tasks")
