@@ -69,8 +69,44 @@ class PoliteFetcher:
         return response.text, fetched_at
 
 
+def discover_three_pages(fetcher: PoliteFetcher) -> list[dict[str, str]]:
+    from bs4 import BeautifulSoup
+    from urllib.parse import urljoin
+
+    page_url = PAGE_1_URL
+    discovered: list[dict[str, str]] = []
+
+    for page_number in range(1, 4):
+        html, _ = fetcher.fetch(page_url, f"catalogue-page-{page_number}.html")
+        soup = BeautifulSoup(html, "html.parser")
+
+        for link in soup.select("article.product_pod h3 a[href]"):
+            discovered.append({
+                "product_url": urljoin(page_url, link["href"]),
+                "source_page": page_url,
+            })
+
+        if page_number < 3:
+            next_link = soup.select_one("li.next a[href]")
+            if next_link is None:
+                raise RuntimeError("Expected the catalogue next link.")
+            page_url = urljoin(page_url, next_link["href"])
+
+    unique: dict[str, dict[str, str]] = {}
+    for item in discovered:
+        unique.setdefault(item["product_url"], item)
+
+    print(
+        f"catalogue_pages=3 discovered={len(discovered)} "
+        f"unique_urls={len(unique)}"
+    )
+    return list(unique.values())
+
+
 def main() -> None:
-    PoliteFetcher().fetch(PAGE_1_URL, "catalogue-page-1.html")
+    items = discover_three_pages(PoliteFetcher())
+    if len(items) != 60:
+        raise RuntimeError(f"Expected 60 unique URLs, found {len(items)}.")
 
 
 if __name__ == "__main__":
