@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from datetime import datetime, timezone
@@ -103,10 +104,95 @@ def discover_three_pages(fetcher: PoliteFetcher) -> list[dict[str, str]]:
     return list(unique.values())
 
 
+RATINGS = {"One", "Two", "Three", "Four", "Five"}
+
+
+def detail_cache_name(product_url: str) -> str:
+    digest = hashlib.sha256(product_url.encode("utf-8")).hexdigest()[:20]
+    return f"book-{digest}.html"
+
+
+def required_text(node, field: str) -> str:
+    if node is None:
+        raise ValueError(f"Missing required field: {field}")
+    value = node.get_text(" ", strip=True)
+    if not value:
+        raise ValueError(f"Empty required field: {field}")
+    return value
+
+
+def extract_raw_record(
+    html: str,
+    product_url: str,
+    source_page: str,
+    fetched_at: str,
+) -> dict:
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    product = soup.select_one("article.product_page")
+    if product is None:
+        raise ValueError("Missing article.product_page")
+
+    rating_node = product.select_one(".product_main p.star-rating")
+    if rating_node is None:
+        raise ValueError("Missing rating")
+
+    rating_text = next(
+        (name for name in rating_node.get("class", []) if name in RATINGS),
+        None,
+    )
+    if rating_text is None:
+        raise ValueError("Unknown rating")
+
+    description = None
+    heading = soup.select_one("#product_description")
+    if heading is not None:
+        node = heading.find_next_sibling("p")
+        if node is not None:
+            description = node.get_text(" ", strip=True) or None
+
+    return {
+        "title": required_text(product.select_one(".product_main h1"), "title"),
+        "product_url": product_url,
+        "price_text": required_text(
+            product.select_one(".product_main .price_color"), "price_text"
+        ),
+        "availability_text": required_text(
+            product.select_one(".product_main .availability"),
+            "availability_text",
+        ),
+        "rating_text": rating_text,
+        "description": description,
+        "source_page": source_page,
+        "fetched_at": fetched_at,
+    }
+
+
 def main() -> None:
-    items = discover_three_pages(PoliteFetcher())
-    if len(items) != 60:
-        raise RuntimeError(f"Expected 60 unique URLs, found {len(items)}.")
+    fetcher = PoliteFetcher()
+    items = discover_three_pages(fetcher)
+    records = []
+
+    for item in items:
+        html, fetched_at = fetcher.fetch(
+            item["product_url"],
+            detail_cache_name(item["product_url"]),
+        )
+        records.append(
+            extract_raw_record(
+                html,
+                item["product_url"],
+                item["source_page"],
+                fetched_at,
+            )
+        )
+
+    if len(records) != 60:
+        raise RuntimeError(f"Expected 60 detail records, got {len(records)}.")
+
+    print(json.dumps(records[0], indent=2, ensure_ascii=False))
+    print(f"detail_pages={len(records)}")
 
 
 if __name__ == "__main__":
