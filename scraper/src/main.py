@@ -1,7 +1,77 @@
-"""FlyRank Week 5 A9 — The polite scraper."""
+from __future__ import annotations
 
-def main():
-    print("Polite scraper scaffold ready.")
+import json
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import requests
+
+ROOT = Path(__file__).resolve().parent.parent
+CACHE_DIR = ROOT / "cache"
+USER_AGENT = "FlyRankInternship-A9/1.0 (+https://github.com/HaiderHumayon/task-api)"
+TIMEOUT_SECONDS = 8
+MIN_DELAY_SECONDS = 0.55
+PAGE_1_URL = "https://books.toscrape.com/catalogue/page-1.html"
+
+
+class FetchError(Exception):
+    pass
+
+
+class PoliteFetcher:
+    def __init__(self) -> None:
+        self.last_request_at = 0.0
+        self.pages_fetched = 0
+        self.cache_hits = 0
+
+    def _wait(self) -> None:
+        remaining = MIN_DELAY_SECONDS - (time.monotonic() - self.last_request_at)
+        if remaining > 0:
+            time.sleep(remaining)
+
+    def fetch(self, url: str, cache_name: str) -> tuple[str, str]:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_path = CACHE_DIR / cache_name
+        meta_path = CACHE_DIR / f"{cache_name}.meta.json"
+
+        if cache_path.exists():
+            html = cache_path.read_text(encoding="utf-8")
+            if meta_path.exists():
+                fetched_at = json.loads(meta_path.read_text(encoding="utf-8"))["fetched_at"]
+            else:
+                fetched_at = datetime.fromtimestamp(
+                    cache_path.stat().st_mtime, timezone.utc
+                ).isoformat().replace("+00:00", "Z")
+            self.cache_hits += 1
+            print(f"CACHE HIT {url} bytes={len(html.encode('utf-8'))}")
+            return html, fetched_at
+
+        self._wait()
+        response = requests.get(
+            url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=TIMEOUT_SECONDS,
+        )
+        self.last_request_at = time.monotonic()
+
+        if response.status_code != 200:
+            raise FetchError(f"HTTP {response.status_code} for {url}")
+
+        fetched_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        cache_path.write_text(response.text, encoding="utf-8")
+        meta_path.write_text(
+            json.dumps({"url": url, "fetched_at": fetched_at}, indent=2),
+            encoding="utf-8",
+        )
+        self.pages_fetched += 1
+        print(f"FETCH {url} status=200 bytes={len(response.content)}")
+        return response.text, fetched_at
+
+
+def main() -> None:
+    PoliteFetcher().fetch(PAGE_1_URL, "catalogue-page-1.html")
+
 
 if __name__ == "__main__":
     main()
