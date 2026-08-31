@@ -1,4 +1,4 @@
-# Task API â€” PostgreSQL + Supabase Auth
+# Task API Ã¢â‚¬â€ PostgreSQL + Supabase Auth
 
 FastAPI backend with PostgreSQL task CRUD plus Supabase authentication. The auth layer supports sign up, login, logout, JWT verification, reusable protected routes, and Swagger bearer authorization.
 
@@ -49,8 +49,14 @@ The existing PostgreSQL-backed `/tasks` CRUD endpoints remain unchanged in purpo
 - Stage 6: publish to GitHub and write README
 
 ## Final verification
-Run signup â†’ login â†’ valid protected call â†’ tampered token 401 from the terminal, then repeat the protected call through Swagger Authorize/Try it out.
+Run signup Ã¢â€ â€™ login Ã¢â€ â€™ valid protected call Ã¢â€ â€™ tampered token 401 from the terminal, then repeat the protected call through Swagger Authorize/Try it out.
 
 ## Week 5 - The polite scraper
 
 The Week 5 assignment is in [`scraper/`](scraper/README.md).
+
+## Week 7 — LLM enrichment
+
+Week 7 adds one narrow AI workflow to this existing API: a scraped book record goes in and a schema-controlled enrichment judgement comes out. The provider is not hard-coded: LLM_BASE_URL, LLM_API_KEY, and LLM_MODEL are environment variables, so the same integration can point at another OpenAI-compatible provider without changing route code.
+
+Stage 0 job definition is in [JOB-CARD.md](JOB-CARD.md).
