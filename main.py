@@ -11,9 +11,11 @@ from repository import (
     initialize_database, update_task as repository_update_task,
 )
 from supabase_client import supabase
+from src.routes.enrich import router as enrich_router
 
 app = FastAPI(title="Task API", version="1.0", description="A CRUD API with PostgreSQL and Supabase authentication.")
 initialize_database()
+app.include_router(enrich_router)
 
 class TaskCreate(BaseModel):
     title: str | None = None

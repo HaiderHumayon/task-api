@@ -1,4 +1,4 @@
-# Task API Ã¢â‚¬â€ PostgreSQL + Supabase Auth
+# Task API ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â PostgreSQL + Supabase Auth
 
 FastAPI backend with PostgreSQL task CRUD plus Supabase authentication. The auth layer supports sign up, login, logout, JWT verification, reusable protected routes, and Swagger bearer authorization.
 
@@ -49,14 +49,64 @@ The existing PostgreSQL-backed `/tasks` CRUD endpoints remain unchanged in purpo
 - Stage 6: publish to GitHub and write README
 
 ## Final verification
-Run signup Ã¢â€ â€™ login Ã¢â€ â€™ valid protected call Ã¢â€ â€™ tampered token 401 from the terminal, then repeat the protected call through Swagger Authorize/Try it out.
+Run signup ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ login ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ valid protected call ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ tampered token 401 from the terminal, then repeat the protected call through Swagger Authorize/Try it out.
 
 ## Week 5 - The polite scraper
 
 The Week 5 assignment is in [`scraper/`](scraper/README.md).
 
-## Week 7 — LLM enrichment
+## Week 7 â€” LLM enrichment
 
 Week 7 adds one narrow AI workflow to this existing API: a scraped book record goes in and a schema-controlled enrichment judgement comes out. The provider is not hard-coded: LLM_BASE_URL, LLM_API_KEY, and LLM_MODEL are environment variables, so the same integration can point at another OpenAI-compatible provider without changing route code.
 
 Stage 0 job definition is in [JOB-CARD.md](JOB-CARD.md).
+
+
+### Stage 1 — endpoint contract and stub mode
+
+`POST /enrich` validates its input before any model call. Its response is constrained by the Pydantic schema in `src/llm/schema.py`.
+
+For Stage 1, set:
+
+```env
+LLM_STUB=1
+```
+
+Valid request:
+
+```bash
+curl -X POST http://localhost:8000/enrich \
+  -H "Content-Type: application/json" \
+  -d '{"title":"A Light in the Attic","description":"A collection of poetry and drawings."}'
+```
+
+Expected Stage 1 response shape:
+
+```json
+{
+  "category": "fiction",
+  "summary": "A Light in the Attic is a fictional work represented by synthetic Stage 1 enrichment data.",
+  "confidence": 0.95,
+  "quality_flags": ["none"],
+  "needs_review": false
+}
+```
+
+Deliberately broken request:
+
+```bash
+curl -X POST http://localhost:8000/enrich \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Missing description"}'
+```
+
+Expected error:
+
+```json
+{
+  "error": "Invalid field: description",
+  "detail": "Field required"
+}
+```
+
+The broken request returns HTTP `400` before any LLM call.
