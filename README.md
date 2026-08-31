@@ -1,4 +1,4 @@
-# Task API — PostgreSQL + Supabase Auth
+# Task API â€” PostgreSQL + Supabase Auth
 
 FastAPI backend with PostgreSQL task CRUD plus Supabase authentication. The auth layer supports sign up, login, logout, JWT verification, reusable protected routes, and Swagger bearer authorization.
 
@@ -49,4 +49,8 @@ The existing PostgreSQL-backed `/tasks` CRUD endpoints remain unchanged in purpo
 - Stage 6: publish to GitHub and write README
 
 ## Final verification
-Run signup → login → valid protected call → tampered token 401 from the terminal, then repeat the protected call through Swagger Authorize/Try it out.
+Run signup â†’ login â†’ valid protected call â†’ tampered token 401 from the terminal, then repeat the protected call through Swagger Authorize/Try it out.
+
+## Week 5 - The polite scraper
+
+The Week 5 assignment is in [`scraper/`](scraper/README.md).

@@ -1,0 +1,20 @@
+{
+  "start_time": "2026-08-31T13:59:30.646068Z",
+  "duration_seconds": 2.292,
+  "catalogue_pages": 3,
+  "discovered_urls": 60,
+  "unique_urls": 60,
+  "detail_pages_attempted": 61,
+  "pages_fetched": 0,
+  "cache_hits": 63,
+  "valid_records": 60,
+  "invalid_records": 0,
+  "failed_pages": 1,
+  "failures": [
+    {
+      "url": "https://books.toscrape.com/catalogue/flyrank-a9-deliberately-missing-book/index.html",
+      "status": 404,
+      "error": "HTTP 404"
+    }
+  ]
+}
