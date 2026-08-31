@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import re
@@ -16,15 +17,26 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = ROOT / "cache"
 OUTPUT_DIR = ROOT / "output"
+
 USER_AGENT = "FlyRankInternship-A9/1.0 (+https://github.com/HaiderHumayon/task-api)"
 TIMEOUT_SECONDS = 8
 MIN_DELAY_SECONDS = 0.55
+RETRY_WAIT_SECONDS = 1.0
+
 PAGE_1_URL = "https://books.toscrape.com/catalogue/page-1.html"
+BROKEN_URL = (
+    "https://books.toscrape.com/catalogue/"
+    "flyrank-a9-deliberately-missing-book/index.html"
+)
 RATINGS = {"One", "Two", "Three", "Four", "Five"}
 
 
 class FetchError(Exception):
-    pass
+    def __init__(self, url: str, message: str, status: int | None = None):
+        super().__init__(message)
+        self.url = url
+        self.message = message
+        self.status = status
 
 
 class BookRecord(BaseModel):
@@ -40,7 +52,7 @@ class BookRecord(BaseModel):
 
     @field_validator("product_url", "source_page")
     @classmethod
-    def require_https(cls, value: str) -> str:
+    def require_https_url(cls, value: str) -> str:
         parsed = urlparse(value)
         if parsed.scheme != "https" or not parsed.netloc:
             raise ValueError("URL must be an absolute https:// URL")
@@ -76,35 +88,70 @@ class PoliteFetcher:
             print(f"CACHE HIT {url} bytes={len(html.encode('utf-8'))}")
             return html, fetched_at
 
-        self._wait()
-        response = requests.get(
-            url,
-            headers={"User-Agent": USER_AGENT},
-            timeout=TIMEOUT_SECONDS,
-        )
-        self.last_request_at = time.monotonic()
+        for attempt in (1, 2):
+            self._wait()
+            try:
+                response = requests.get(
+                    url,
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=TIMEOUT_SECONDS,
+                )
+                self.last_request_at = time.monotonic()
+            except (requests.Timeout, requests.ConnectionError) as exc:
+                self.last_request_at = time.monotonic()
+                if attempt == 1:
+                    print(f"RETRY {url} reason={type(exc).__name__}")
+                    time.sleep(RETRY_WAIT_SECONDS)
+                    continue
+                raise FetchError(
+                    url, f"{type(exc).__name__}: {exc}"
+                ) from exc
 
-        if response.status_code != 200:
-            raise FetchError(f"HTTP {response.status_code} for {url}")
+            if response.status_code == 200:
+                html = response.content.decode("utf-8")
+                fetched_at = datetime.now(timezone.utc).isoformat().replace(
+                    "+00:00", "Z"
+                )
+                cache_path.write_text(html, encoding="utf-8")
+                meta_path.write_text(
+                    json.dumps(
+                        {"url": url, "fetched_at": fetched_at},
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+                self.pages_fetched += 1
+                print(
+                    f"FETCH {url} status=200 "
+                    f"bytes={len(response.content)}"
+                )
+                return html, fetched_at
 
-        # Books to Scrape is UTF-8. Decode bytes explicitly so the pound sign
-        # does not become the common mojibake sequence U+00C2 U+00A3.
-        html = response.content.decode("utf-8")
-        fetched_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        cache_path.write_text(html, encoding="utf-8")
-        meta_path.write_text(
-            json.dumps({"url": url, "fetched_at": fetched_at}, indent=2),
-            encoding="utf-8",
-        )
-        self.pages_fetched += 1
-        print(f"FETCH {url} status=200 bytes={len(response.content)}")
-        return html, fetched_at
+            if response.status_code in {403, 404}:
+                raise FetchError(
+                    url,
+                    f"HTTP {response.status_code}",
+                    response.status_code,
+                )
+
+            if 500 <= response.status_code <= 599 and attempt == 1:
+                print(
+                    f"RETRY {url} status={response.status_code} "
+                    f"after={RETRY_WAIT_SECONDS}s"
+                )
+                time.sleep(RETRY_WAIT_SECONDS)
+                continue
+
+            raise FetchError(
+                url,
+                f"HTTP {response.status_code}",
+                response.status_code,
+            )
+
+        raise FetchError(url, "Fetch failed after retry")
 
 
 def repair_price_text(value: str) -> str:
-    # Existing Stage 1-3 cache files were written after Requests guessed the
-    # wrong encoding. Repair only that known decoding artifact while keeping
-    # the scraped raw price value otherwise unchanged.
     return value.replace("\u00c2\u00a3", "\u00a3")
 
 
@@ -118,7 +165,10 @@ def discover_three_pages(fetcher: PoliteFetcher) -> list[dict[str, str]]:
     discovered = []
 
     for page_number in range(1, 4):
-        html, _ = fetcher.fetch(page_url, f"catalogue-page-{page_number}.html")
+        html, _ = fetcher.fetch(
+            page_url,
+            f"catalogue-page-{page_number}.html",
+        )
         soup = BeautifulSoup(html, "html.parser")
 
         for link in soup.select("article.product_pod h3 a[href]"):
@@ -242,39 +292,105 @@ def write_json(filename: str, value) -> None:
     )
 
 
-def run_once() -> tuple[list[dict], list[dict]]:
+def run_pipeline(include_broken: bool = False) -> dict:
+    started_at = datetime.now(timezone.utc)
+    started = time.monotonic()
     fetcher = PoliteFetcher()
+
     items = discover_three_pages(fetcher)
-    raw = []
+    work_items = list(items)
 
-    for item in items:
-        html, fetched_at = fetcher.fetch(
-            item["product_url"],
-            detail_cache_name(item["product_url"]),
+    if include_broken:
+        work_items.append(
+            {
+                "product_url": BROKEN_URL,
+                "source_page": PAGE_1_URL,
+            }
         )
-        raw.append(
-            extract_raw_record(
-                html,
+
+    raw_records = []
+    failed = []
+
+    for item in work_items:
+        try:
+            html, fetched_at = fetcher.fetch(
                 item["product_url"],
-                item["source_page"],
-                fetched_at,
+                detail_cache_name(item["product_url"]),
             )
-        )
+            raw_records.append(
+                extract_raw_record(
+                    html,
+                    item["product_url"],
+                    item["source_page"],
+                    fetched_at,
+                )
+            )
+        except FetchError as exc:
+            failed.append(
+                {
+                    "url": exc.url,
+                    "status": exc.status,
+                    "error": exc.message,
+                }
+            )
+            print(
+                f"SKIP {exc.url} status={exc.status} "
+                f"reason={exc.message}"
+            )
+        except Exception as exc:
+            failed.append(
+                {
+                    "url": item["product_url"],
+                    "status": None,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            print(
+                f"SKIP {item['product_url']} "
+                f"reason={type(exc).__name__}: {exc}"
+            )
 
-    good, errors = validate_records(raw)
+    good, errors = validate_records(raw_records)
     write_json("books.json", good)
     write_json("errors.json", errors)
 
-    print(f"valid_records={len(good)} invalid_records={len(errors)}")
-    return good, errors
+    report = {
+        "start_time": started_at.isoformat().replace("+00:00", "Z"),
+        "duration_seconds": round(time.monotonic() - started, 3),
+        "catalogue_pages": 3,
+        "discovered_urls": len(items),
+        "unique_urls": len(items),
+        "detail_pages_attempted": len(work_items),
+        "pages_fetched": fetcher.pages_fetched,
+        "cache_hits": fetcher.cache_hits,
+        "valid_records": len(good),
+        "invalid_records": len(errors),
+        "failed_pages": len(failed),
+        "failures": failed,
+    }
+    write_json("run-report.json", report)
+
+    print(
+        "RUN REPORT "
+        f"valid_records={report['valid_records']} "
+        f"invalid_records={report['invalid_records']} "
+        f"failed_pages={report['failed_pages']} "
+        f"pages_fetched={report['pages_fetched']} "
+        f"cache_hits={report['cache_hits']} "
+        f"duration_seconds={report['duration_seconds']}"
+    )
+    return report
 
 
 def main() -> None:
-    good, errors = run_once()
-    if len(good) != 60 or errors:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--include-broken", action="store_true")
+    args = parser.parse_args()
+
+    report = run_pipeline(include_broken=args.include_broken)
+    if report["valid_records"] != 60:
         raise RuntimeError(
-            f"Expected 60 valid and 0 invalid records; got "
-            f"{len(good)} valid and {len(errors)} invalid."
+            f"Expected 60 valid records, got {report['valid_records']}."
         )
 
 
