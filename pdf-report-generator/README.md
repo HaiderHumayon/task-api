@@ -2,50 +2,99 @@
 
 FlyRank Internship — Backend Track — Assignment A8.
 
-This assignment builds a synchronous data-to-document pipeline:
+This project is a complete synchronous data-to-document pipeline:
 
 ```text
-SQLite data -> SQL aggregation -> HTML -> PDF -> file link
+books.json
+   ↓
+SQLite
+   ↓
+SQL aggregations
+   ↓
+HTML report
+   ↓
+Playwright / Chromium
+   ↓
+A4 PDF
+   ↓
+FastAPI metadata + download link
 ```
 
-The Python lane uses FastAPI, Python's built-in `sqlite3`, and Playwright with headless Chromium.
+## Stack
 
-The project uses the bookstore dataset option: 60 validated book records are seeded into a local SQLite database in Stage 1.
+- Python
+- FastAPI
+- SQLite through Python's built-in `sqlite3`
+- Playwright
+- Headless Chromium
 
-## Stage 0
+No background worker is required for the core A8 implementation. `POST /reports` intentionally performs the SQL query, HTML rendering, PDF generation, and metadata persistence synchronously.
 
-Stage 0 provides:
+## Project structure
 
-- `GET /health`
-- FastAPI on port 8000
-- Playwright installed
-- Chromium installed for PDF rendering
+```text
+pdf-report-generator/
+├── main.py
+├── seed.py
+├── report_data.py
+├── pdf_renderer.py
+├── report_store.py
+├── requirements.txt
+├── .gitignore
+├── README.md
+└── docs/
+    └── report-page1.png
+```
 
-Run the API from this folder:
+Generated files are intentionally excluded from Git:
+
+```text
+report.db
+reports/
+.venv/
+.dev/
+```
+
+## 1. Setup
+
+From the repository root:
 
 ```powershell
-$env:PYTHONUTF8="1"
-.\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+cd pdf-report-generator
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
 ```
 
-Health check:
+## 2. Seed the bookstore data
+
+The project reuses the validated 60-record dataset at:
+
+```text
+../scraper/output/books.json
+```
+
+Seed SQLite:
 
 ```powershell
-curl.exe -i http://localhost:8000/health
+.\.venv\Scripts\python.exe seed.py
 ```
 
-Expected body:
+The seed is deliberately safe to rerun:
 
-```json
-{"status":"ok"}
+```sql
+DELETE FROM books;
 ```
 
-Later stages add SQLite seeding, aggregation queries, HTML-to-PDF rendering, report records, download links, and once-per-day idempotency.
-## Stage 1 - Data worth reporting on
+Then all 60 records are inserted again.
 
-This project uses the bookstore dataset from `../scraper/output/books.json`.
+Checkpoint:
 
-The SQLite schema is:
+```text
+SELECT COUNT(*) FROM books -> 60
+```
+
+The `books` table is:
 
 ```sql
 CREATE TABLE books (
@@ -57,32 +106,15 @@ CREATE TABLE books (
 );
 ```
 
-Seed the database:
+## 3. SQL aggregation layer
 
-```powershell
-.\.venv\Scripts\python.exe seed.py
-```
-
-`seed.py` converts the scraper's `rating_text` values (`One` through `Five`) into integers `1` through `5`.
-
-The script starts with `DELETE FROM books`, so running the seed twice does not duplicate development data. Both runs finish with:
-
-```text
-SELECT COUNT(*) FROM books -> 60
-```
-
-The generated `report.db` is intentionally ignored by Git. The committed seed script is the reproducible recipe.
-## Stage 2 - Aggregation queries
-
-`report_data.py` contains the reusable query layer for the report.
-
-Run it with:
+Run:
 
 ```powershell
 .\.venv\Scripts\python.exe report_data.py
 ```
 
-The summary query calculates the total number of books and average price:
+### Total books and average price
 
 ```sql
 SELECT
@@ -91,7 +123,12 @@ SELECT
 FROM books;
 ```
 
-The five most expensive books are selected with:
+Final verified values:
+
+- Total books: **60**
+- Average price: **£35.00**
+
+### Five most expensive books
 
 ```sql
 SELECT title, price, rating, url
@@ -100,7 +137,15 @@ ORDER BY price DESC, title ASC
 LIMIT 5;
 ```
 
-Rating distribution is calculated with:
+| # | Book | Price | Rating |
+|---:|---|---:|---:|
+| 1 | Slow States of Collapse: Poems | £57.31 | 3 |
+| 2 | Our Band Could Be Your Life: Scenes from the American Indie Underground, 1981-1991 | £57.25 | 3 |
+| 3 | The Past Never Ends | £56.50 | 4 |
+| 4 | The Pioneer Woman Cooks: Dinnertime: Comfort Classics, Freezer Food, 16-Minute Meals, and Other Delicious Ways to Solve Supper! | £56.41 | 1 |
+| 5 | The Secret of Dreadwillow Carse | £56.13 | 1 |
+
+### Rating distribution
 
 ```sql
 SELECT rating, COUNT(*) AS book_count
@@ -109,18 +154,25 @@ GROUP BY rating
 ORDER BY rating ASC;
 ```
 
-The function also loads the complete 60-book table so the next stage can render a multi-page PDF without duplicating database logic.
-## Stage 3 - HTML to PDF
+| Rating | Count |
+|---:|---:|
+| 1 | 15 |
+| 2 | 8 |
+| 3 | 13 |
+| 4 | 10 |
+| 5 | 14 |
 
-`pdf_renderer.py` turns the Stage 2 aggregation data into an HTML report and uses headless Chromium through Playwright to print it as an A4 PDF.
+The rating counts add up to **60**.
 
-Generate the checkpoint file:
+## 4. HTML → PDF
+
+Generate a standalone checkpoint PDF:
 
 ```powershell
 .\.venv\Scripts\python.exe pdf_renderer.py --output reports/test.pdf
 ```
 
-The renderer uses:
+Playwright prints the HTML using:
 
 ```python
 page.pdf(
@@ -131,9 +183,15 @@ page.pdf(
 )
 ```
 
-The report includes summary metrics, the five most expensive books, rating counts, and the complete 60-book table.
+The report contains:
 
-Print-safe table CSS includes:
+- total book count
+- average price
+- five most expensive books
+- rating distribution
+- the complete 60-book table
+
+Print-safe table rules include:
 
 ```css
 thead {
@@ -146,10 +204,30 @@ tr {
 }
 ```
 
-This keeps rows from splitting awkwardly and repeats the table header on later PDF pages. `reports/` is generated output and remains ignored by Git.
-## Stage 4 - Generate on demand
+The full table produces a multi-page PDF, the table header repeats on later pages, and individual rows are protected from splitting across page boundaries.
 
-The API now stores generated-report metadata in SQLite:
+## Report page-1 evidence
+
+![Bookstore report page 1](docs/report-page1.png)
+
+## 5. Run the API
+
+Start FastAPI:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+```
+
+Endpoints:
+
+| Method | Endpoint | Behavior |
+|---|---|---|
+| GET | `/health` | health check |
+| POST | `/reports` | generate or reuse today's report |
+| GET | `/reports/{id}` | return persisted report metadata |
+| GET | `/reports/{id}/file` | download the generated PDF |
+
+The metadata table is:
 
 ```sql
 CREATE TABLE reports (
@@ -159,87 +237,122 @@ CREATE TABLE reports (
 );
 ```
 
-Start the API:
+Unknown report IDs return HTTP `404`.
 
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+## 6. Final live API proof
+
+The final Stage 6 verification was run against the actual FastAPI application.
+
+### First normal POST — generate
+
+```http
+POST /reports
+HTTP 201 Created
 ```
-
-Generate a report synchronously:
-
-```powershell
-curl.exe -i -X POST http://localhost:8000/reports
-```
-
-A successful request returns HTTP `201 Created` with an id and download URL:
 
 ```json
 {
   "id": 1,
-  "created_at": "2026-09-02T00:00:00+00:00",
-  "file_url": "/reports/1/file"
+  "created_at": "2026-09-01T20:21:07.572692+00:00",
+  "file_url": "/reports/1/file",
+  "reused": false
 }
 ```
 
-Read report metadata:
+Generated file:
 
-```powershell
-curl.exe http://localhost:8000/reports/1
+```text
+reports/1.pdf
 ```
 
-Download the PDF:
+Verified PDF size: **90546 bytes**.
+
+### Second normal POST — reuse
+
+A second normal request on the same UTC day returned:
+
+```http
+POST /reports
+HTTP 200 OK
+```
+
+```json
+{
+  "id": 1,
+  "created_at": "2026-09-01T20:21:07.572692+00:00",
+  "file_url": "/reports/1/file",
+  "reused": true
+}
+```
+
+The report ID stayed the same and no second PDF was generated.
+
+### Force a fresh report
+
+Request:
+
+```json
+{
+  "force": true
+}
+```
+
+Response:
+
+```http
+POST /reports
+HTTP 201 Created
+```
+
+```json
+{
+  "id": 2,
+  "created_at": "2026-09-01T20:21:09.232565+00:00",
+  "file_url": "/reports/2/file",
+  "reused": false
+}
+```
+
+Generated file:
+
+```text
+reports/2.pdf
+```
+
+Verified PDF size: **90546 bytes**.
+
+The forced report has a different ID from the normal daily report.
+
+## Why the idempotency rule exists
+
+A normal `POST /reports` is safe to retry: once a report already exists for the current UTC day, the API returns that report with HTTP `200` instead of creating a duplicate.
+
+`{"force": true}` is the explicit override when the caller deliberately wants a fresh PDF snapshot.
+
+## Direct download
+
+Example:
 
 ```powershell
 curl.exe http://localhost:8000/reports/1/file --output report.pdf
 ```
 
-Unknown report IDs return HTTP `404`.
+The final checkpoint verified that this endpoint returned HTTP `200`, `application/pdf`, and valid bytes beginning with `%PDF-`.
 
-At this stage the endpoint is intentionally synchronous: the SQL queries, HTML rendering, PDF creation, and metadata insert all complete as part of `POST /reports`.
-## Stage 5 - One report per day
+## Submission notes
 
-Normal report generation is idempotent within the current UTC calendar day.
-
-The first request generates a new PDF:
-
-```powershell
-curl.exe -i -X POST http://localhost:8000/reports
-```
-
-Response:
-
-```text
-HTTP/1.1 201 Created
-```
-
-Calling the same endpoint again on the same UTC day returns the existing report instead of generating a duplicate:
-
-```text
-HTTP/1.1 200 OK
-```
-
-The second response contains the same report `id` and:
-
-```json
-{
-  "reused": true
-}
-```
-
-To explicitly generate a new report anyway:
-
-```powershell
-curl.exe -i -X POST http://localhost:8000/reports `
-  -H "Content-Type: application/json" `
-  -d "{\"force\":true}"
-```
-
-The force request returns HTTP `201 Created`, a new id, and:
-
-```json
-{
-  "reused": false
-}
-```
-
-**Why:** the normal route is safe to retry without accidentally producing duplicate daily reports. `force:true` is the deliberate escape hatch when a fresh snapshot is required.
+- Data source: 60 validated bookstore records
+- SQLite seed: reproducible and safe to rerun
+- Required aggregations: implemented in SQL
+- PDF: A4, multi-page, print backgrounds enabled
+- Repeating table header: implemented
+- Row page-break protection: implemented
+- `POST /reports`: synchronous generation
+- Metadata lookup: implemented
+- PDF download: implemented
+- Unknown IDs: HTTP `404`
+- Daily idempotency: implemented
+- `force:true` override: implemented
+- `report.db`: ignored
+- `reports/`: ignored
+- Public Git history: 7 staged assignment commits
