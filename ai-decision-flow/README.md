@@ -253,3 +253,37 @@ The workflow now:
 The Stage 4 UI exposes one `Run with AI` action rather than deterministic test controls.
 
 A real API key is intentionally not stored or committed. Final live execution evidence is added in the later execution/polish stage.
+## Stage 5 — execution state and logs
+
+The UI now tracks the state of an Inngest execution instead of stopping after event dispatch.
+
+`POST /api/execute` creates an in-memory run record keyed by the returned Inngest event ID.
+
+The Inngest workflow updates that run state while traversing the graph:
+
+- queued
+- running
+- active node
+- node result
+- branch followed
+- completed
+- failed
+
+The UI polls:
+
+```text
+GET /api/runs/{eventId}
+```
+
+and renders:
+
+- current run status
+- active-node highlight
+- visited-node styling
+- per-node last decision
+- traversed-edge emphasis
+- execution order
+- live execution log
+- terminal/failure state
+
+The state store is intentionally lightweight and process-local for this internship assignment. A production multi-instance deployment would move execution state to a shared persistent store such as PostgreSQL, Redis, or another durable database.

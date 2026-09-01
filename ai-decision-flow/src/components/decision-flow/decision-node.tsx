@@ -9,6 +9,7 @@ import {
   Bot,
   Check,
   GripVertical,
+  LoaderCircle,
   X,
 } from "lucide-react";
 
@@ -19,13 +20,25 @@ export function DecisionNode({
   data,
   selected,
 }: NodeProps<DecisionFlowNode>) {
+  const isActive =
+    data.executionStatus ===
+    "active";
+
+  const isVisited =
+    data.executionStatus ===
+    "visited";
+
   return (
     <article
       className={[
         "relative w-[310px] overflow-visible rounded-2xl border bg-slate-950/95 shadow-2xl transition",
-        selected
-          ? "border-sky-400 ring-2 ring-sky-400/20"
-          : "border-slate-700",
+        isActive
+          ? "border-amber-300 ring-4 ring-amber-300/20"
+          : isVisited
+            ? "border-violet-400/70"
+            : selected
+              ? "border-sky-400 ring-2 ring-sky-400/20"
+              : "border-slate-700",
       ].join(" ")}
     >
       <Handle
@@ -39,13 +52,25 @@ export function DecisionNode({
         <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/90 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sky-400/10 text-sky-300">
-              <Bot size={18} />
+              {isActive ? (
+                <LoaderCircle
+                  size={18}
+                  className="animate-spin text-amber-300"
+                />
+              ) : (
+                <Bot size={18} />
+              )}
             </span>
 
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-300">
-                Decision
+                {isActive
+                  ? "Executing"
+                  : isVisited
+                    ? "Visited"
+                    : "Decision"}
               </p>
+
               <h3 className="truncate text-sm font-semibold text-white">
                 {data.title}
               </h3>
@@ -71,7 +96,10 @@ export function DecisionNode({
             id={`prompt-${id}`}
             value={data.prompt}
             onChange={(event) => {
-              data.onPromptChange?.(id, event.target.value);
+              data.onPromptChange?.(
+                id,
+                event.target.value,
+              );
             }}
             onPointerDown={(event) => {
               event.stopPropagation();
@@ -83,8 +111,26 @@ export function DecisionNode({
           />
 
           <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
-            <span>{data.prompt.length} characters</span>
-            <span>Strict YES / NO</span>
+            <span>
+              {data.prompt.length} characters
+            </span>
+
+            {data.lastDecision ? (
+              <span
+                className={
+                  data.lastDecision ===
+                  "YES"
+                    ? "font-bold text-emerald-300"
+                    : "font-bold text-rose-300"
+                }
+              >
+                Last: {data.lastDecision}
+              </span>
+            ) : (
+              <span>
+                Strict YES / NO
+              </span>
+            )}
           </div>
         </div>
       </div>

@@ -7,6 +7,14 @@ import {
   decideWithLlm,
   type StrictDecision,
 } from "@/lib/decision-engine";
+import {
+  markNodeActive,
+  markRunCompleted,
+  markRunFailed,
+  markRunStarted,
+  recordBranchFollowed,
+  recordNodeResult,
+} from "@/lib/run-store";
 
 type ExecutionResult = {
   nodeId: string;
@@ -41,107 +49,164 @@ export const executeDecisionFlow =
       step,
       logger,
     }) => {
-      const {
-        nodes,
-        edges,
-        startNodeId,
-      } = event.data;
+      const eventId = event.id;
 
-      const nodesById = new Map(
-        nodes.map((node) => [
-          node.id,
-          node,
-        ]),
-      );
+      try {
+        markRunStarted(eventId);
 
-      const visited = new Set<string>();
-      const executionOrder: string[] = [];
-      const results: ExecutionResult[] = [];
+        const {
+          nodes,
+          edges,
+          startNodeId,
+        } = event.data;
 
-      let currentNodeId = startNodeId;
+        const nodesById = new Map(
+          nodes.map((node) => [
+            node.id,
+            node,
+          ]),
+        );
 
-      for (
-        let stepIndex = 0;
-        stepIndex < nodes.length;
-        stepIndex += 1
-      ) {
-        if (visited.has(currentNodeId)) {
-          throw new Error(
-            `Cycle detected at ${currentNodeId}.`,
+        const visited =
+          new Set<string>();
+        const executionOrder:
+          string[] = [];
+        const results:
+          ExecutionResult[] = [];
+
+        let currentNodeId =
+          startNodeId;
+
+        for (
+          let stepIndex = 0;
+          stepIndex < nodes.length;
+          stepIndex += 1
+        ) {
+          if (
+            visited.has(
+              currentNodeId,
+            )
+          ) {
+            throw new Error(
+              `Cycle detected at ${currentNodeId}.`,
+            );
+          }
+
+          const node =
+            nodesById.get(
+              currentNodeId,
+            );
+
+          if (!node) {
+            throw new Error(
+              `Node ${currentNodeId} does not exist.`,
+            );
+          }
+
+          visited.add(
+            currentNodeId,
           );
-        }
 
-        const node =
-          nodesById.get(currentNodeId);
-
-        if (!node) {
-          throw new Error(
-            `Node ${currentNodeId} does not exist.`,
+          markNodeActive(
+            eventId,
+            currentNodeId,
           );
-        }
 
-        visited.add(currentNodeId);
+          const result =
+            await step.run(
+              `node-${stepIndex + 1}-${currentNodeId}`,
+              async () => {
+                const llmResult =
+                  await decideWithLlm(
+                    node.prompt,
+                  );
 
-        const result = await step.run(
-          `node-${stepIndex + 1}-${currentNodeId}`,
-          async () => {
-            const llmResult =
-              await decideWithLlm(
-                node.prompt,
-              );
+                logger.info(
+                  {
+                    nodeId:
+                      currentNodeId,
+                    decision:
+                      llmResult.decision,
+                    model:
+                      llmResult.model,
+                  },
+                  "AI decision node executed",
+                );
 
-            logger.info(
-              {
-                nodeId:
-                  currentNodeId,
-                decision:
-                  llmResult.decision,
-                model:
-                  llmResult.model,
+                return {
+                  nodeId:
+                    currentNodeId,
+                  title:
+                    node.title,
+                  prompt:
+                    node.prompt,
+                  decision:
+                    llmResult.decision,
+                  model:
+                    llmResult.model,
+                } satisfies ExecutionResult;
               },
-              "AI decision node executed",
+            );
+
+          executionOrder.push(
+            currentNodeId,
+          );
+          results.push(result);
+
+          recordNodeResult(
+            eventId,
+            result,
+          );
+
+          const nextEdge =
+            getNextEdge(
+              edges,
+              currentNodeId,
+              result.decision,
+            );
+
+          if (!nextEdge) {
+            markRunCompleted(
+              eventId,
+              currentNodeId,
             );
 
             return {
-              nodeId:
+              status:
+                "completed",
+              terminalNodeId:
                 currentNodeId,
-              title: node.title,
-              prompt: node.prompt,
-              decision:
-                llmResult.decision,
-              model:
-                llmResult.model,
-            } satisfies ExecutionResult;
-          },
-        );
+              executionOrder,
+              results,
+            };
+          }
 
-        executionOrder.push(
-          currentNodeId,
-        );
-        results.push(result);
+          recordBranchFollowed(
+            eventId,
+            currentNodeId,
+            nextEdge.target,
+            result.decision,
+          );
 
-        const nextEdge = getNextEdge(
-          edges,
-          currentNodeId,
-          result.decision,
-        );
-
-        if (!nextEdge) {
-          return {
-            status: "completed",
-            terminalNodeId:
-              currentNodeId,
-            executionOrder,
-            results,
-          };
+          currentNodeId =
+            nextEdge.target;
         }
 
-        currentNodeId =
-          nextEdge.target;
-      }
+        throw new Error(
+          "Traversal exceeded the number of graph nodes.",
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unknown execution error.";
 
-      throw new Error(
-        "Traversal exceeded the number of graph nodes.",
-      );
+        markRunFailed(
+          eventId,
+          message,
+        );
+
+        throw error;
+      }
     },
   );

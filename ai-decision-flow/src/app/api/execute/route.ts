@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { createRun } from "@/lib/run-store";
+
 import {
   decisionFlowEventDataSchema,
   decisionFlowExecute,
@@ -112,11 +114,17 @@ export async function POST(
     ),
   );
 
+  const eventId =
+    sent.ids[0] ?? null;
+
+  if (eventId) {
+    createRun(eventId);
+  }
+
   return NextResponse.json(
     {
       accepted: true,
-      eventId:
-        sent.ids[0] ?? null,
+      eventId,
       startNodeId:
         parsed.data.startNodeId,
       nodeCount:
