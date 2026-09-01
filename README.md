@@ -1,4 +1,4 @@
-# Task API ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â PostgreSQL + Supabase Auth
+# Task API ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â PostgreSQL + Supabase Auth
 
 FastAPI backend with PostgreSQL task CRUD plus Supabase authentication. The auth layer supports sign up, login, logout, JWT verification, reusable protected routes, and Swagger bearer authorization.
 
@@ -49,20 +49,20 @@ The existing PostgreSQL-backed `/tasks` CRUD endpoints remain unchanged in purpo
 - Stage 6: publish to GitHub and write README
 
 ## Final verification
-Run signup ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ login ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ valid protected call ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ tampered token 401 from the terminal, then repeat the protected call through Swagger Authorize/Try it out.
+Run signup ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ login ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ valid protected call ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ tampered token 401 from the terminal, then repeat the protected call through Swagger Authorize/Try it out.
 
 ## Week 5 - The polite scraper
 
 The Week 5 assignment is in [`scraper/`](scraper/README.md).
 
-## Week 7 â€” LLM enrichment
+## Week 7 Ã¢â‚¬â€ LLM enrichment
 
 Week 7 adds one narrow AI workflow to this existing API: a scraped book record goes in and a schema-controlled enrichment judgement comes out. The provider is not hard-coded: LLM_BASE_URL, LLM_API_KEY, and LLM_MODEL are environment variables, so the same integration can point at another OpenAI-compatible provider without changing route code.
 
 Stage 0 job definition is in [JOB-CARD.md](JOB-CARD.md).
 
 
-### Stage 1 — endpoint contract and stub mode
+### Stage 1 â€” endpoint contract and stub mode
 
 `POST /enrich` validates its input before any model call. Its response is constrained by the Pydantic schema in `src/llm/schema.py`.
 
@@ -110,3 +110,14 @@ Expected error:
 ```
 
 The broken request returns HTTP `400` before any LLM call.
+
+
+### Stage 2 — prompt v1 and real model calls
+
+The prompt is versioned at [`prompts/book-enrich-v1.md`](prompts/book-enrich-v1.md). It contains the model role, exact output shape, closed lists, rules, explicit when-unsure behavior, and three examples.
+
+The route never concatenates scraped content into the system prompt. The book record is JSON-encoded and sent as a separate user message so untrusted scraped text remains data rather than instructions.
+
+For the Stage 2 checkpoint, `LLM_STUB=0` makes three real OpenRouter calls. Stage 2 temporarily exposes each raw answer so it can be inspected. Stage 3 removes raw model output from the public API and replaces it with parsing, Pydantic validation, one repair retry, and quarantine behavior.
+
+Observed during the automated Stage 2 checkpoint: the model was tested with a normal fiction-like description, an ambiguous description, and a prompt-injection attempt.
