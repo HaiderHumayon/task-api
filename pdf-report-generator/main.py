@@ -1,23 +1,32 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Body, FastAPI, HTTPException, Response, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from pdf_renderer import generate_pdf
 from report_store import (
     DEFAULT_DATABASE,
     create_report_record,
+    delete_report_record,
     ensure_reports_table,
+    get_latest_report_for_utc_day,
     get_report_record,
+    update_report_path,
 )
 
 
 ROOT = Path(__file__).resolve().parent
 REPORTS_DIR = ROOT / "reports"
+
+
+class ReportRequest(BaseModel):
+    force: bool = False
 
 
 @asynccontextmanager
@@ -29,7 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="PDF Report Generator",
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -39,14 +48,47 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post(
-    "/reports",
-    status_code=status.HTTP_201_CREATED,
-)
-def create_report() -> dict[str, object]:
+def response_payload(
+    record: dict[str, object],
+    *,
+    reused: bool,
+) -> dict[str, object]:
+    report_id = int(record["id"])
+
+    return {
+        "id": report_id,
+        "created_at": record["created_at"],
+        "file_url": f"/reports/{report_id}/file",
+        "reused": reused,
+    }
+
+
+@app.post("/reports")
+def create_report(
+    response: Response,
+    payload: ReportRequest | None = Body(default=None),
+) -> dict[str, object]:
     ensure_reports_table(DEFAULT_DATABASE)
 
-    # Reserve a row first so its numeric id becomes the stable filename.
+    force = payload.force if payload is not None else False
+    today_utc = datetime.now(timezone.utc).date().isoformat()
+
+    if not force:
+        existing = get_latest_report_for_utc_day(
+            today_utc,
+            database=DEFAULT_DATABASE,
+        )
+
+        if existing is not None:
+            existing_path = ROOT / str(existing["path"])
+
+            if existing_path.is_file():
+                response.status_code = status.HTTP_200_OK
+                return response_payload(
+                    existing,
+                    reused=True,
+                )
+
     provisional = create_report_record(
         path="pending",
         database=DEFAULT_DATABASE,
@@ -61,31 +103,18 @@ def create_report() -> dict[str, object]:
             output_path=output_path,
             database=DEFAULT_DATABASE,
         )
-    except Exception:
-        # The API should not leave a database row pointing at a missing file.
-        import sqlite3
-
-        with sqlite3.connect(DEFAULT_DATABASE) as connection:
-            connection.execute(
-                "DELETE FROM reports WHERE id = ?",
-                (report_id,),
-            )
-            connection.commit()
-
-        raise
-
-    import sqlite3
-
-    with sqlite3.connect(DEFAULT_DATABASE) as connection:
-        connection.execute(
-            """
-            UPDATE reports
-            SET path = ?
-            WHERE id = ?
-            """,
-            (relative_path, report_id),
+        update_report_path(
+            report_id,
+            relative_path,
+            database=DEFAULT_DATABASE,
         )
-        connection.commit()
+    except Exception:
+        delete_report_record(
+            report_id,
+            database=DEFAULT_DATABASE,
+        )
+        output_path.unlink(missing_ok=True)
+        raise
 
     record = get_report_record(
         report_id,
@@ -95,11 +124,12 @@ def create_report() -> dict[str, object]:
     if record is None:
         raise RuntimeError("Report metadata disappeared after creation")
 
-    return {
-        "id": report_id,
-        "created_at": record["created_at"],
-        "file_url": f"/reports/{report_id}/file",
-    }
+    response.status_code = status.HTTP_201_CREATED
+
+    return response_payload(
+        record,
+        reused=False,
+    )
 
 
 @app.get("/reports/{report_id}")

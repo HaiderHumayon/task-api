@@ -53,6 +53,39 @@ def create_report_record(
     }
 
 
+def update_report_path(
+    report_id: int,
+    path: str,
+    database: Path = DEFAULT_DATABASE,
+) -> None:
+    database = database.resolve()
+
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            UPDATE reports
+            SET path = ?
+            WHERE id = ?
+            """,
+            (path, report_id),
+        )
+        connection.commit()
+
+
+def delete_report_record(
+    report_id: int,
+    database: Path = DEFAULT_DATABASE,
+) -> None:
+    database = database.resolve()
+
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "DELETE FROM reports WHERE id = ?",
+            (report_id,),
+        )
+        connection.commit()
+
+
 def get_report_record(
     report_id: int,
     database: Path = DEFAULT_DATABASE,
@@ -69,6 +102,37 @@ def get_report_record(
             WHERE id = ?
             """,
             (report_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "id": int(row["id"]),
+        "path": str(row["path"]),
+        "created_at": str(row["created_at"]),
+    }
+
+
+def get_latest_report_for_utc_day(
+    day: str,
+    database: Path = DEFAULT_DATABASE,
+) -> dict[str, Any] | None:
+    database = database.resolve()
+
+    with sqlite3.connect(database) as connection:
+        connection.row_factory = sqlite3.Row
+
+        row = connection.execute(
+            """
+            SELECT id, path, created_at
+            FROM reports
+            WHERE substr(created_at, 1, 10) = ?
+              AND path <> 'pending'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (day,),
         ).fetchone()
 
     if row is None:

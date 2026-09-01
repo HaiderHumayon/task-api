@@ -196,3 +196,50 @@ curl.exe http://localhost:8000/reports/1/file --output report.pdf
 Unknown report IDs return HTTP `404`.
 
 At this stage the endpoint is intentionally synchronous: the SQL queries, HTML rendering, PDF creation, and metadata insert all complete as part of `POST /reports`.
+## Stage 5 - One report per day
+
+Normal report generation is idempotent within the current UTC calendar day.
+
+The first request generates a new PDF:
+
+```powershell
+curl.exe -i -X POST http://localhost:8000/reports
+```
+
+Response:
+
+```text
+HTTP/1.1 201 Created
+```
+
+Calling the same endpoint again on the same UTC day returns the existing report instead of generating a duplicate:
+
+```text
+HTTP/1.1 200 OK
+```
+
+The second response contains the same report `id` and:
+
+```json
+{
+  "reused": true
+}
+```
+
+To explicitly generate a new report anyway:
+
+```powershell
+curl.exe -i -X POST http://localhost:8000/reports `
+  -H "Content-Type: application/json" `
+  -d "{\"force\":true}"
+```
+
+The force request returns HTTP `201 Created`, a new id, and:
+
+```json
+{
+  "reused": false
+}
+```
+
+**Why:** the normal route is safe to retry without accidentally producing duplicate daily reports. `force:true` is the deliberate escape hatch when a fresh snapshot is required.
