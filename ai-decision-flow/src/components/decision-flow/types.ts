@@ -1,5 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 
+export type BranchType = "YES" | "NO";
+
 export type DecisionNodeData = {
   title: string;
   prompt: string;
@@ -7,4 +9,9 @@ export type DecisionNodeData = {
 };
 
 export type DecisionFlowNode = Node<DecisionNodeData, "decision">;
-export type DecisionFlowEdge = Edge;
+
+export type BranchEdgeData = {
+  branch: BranchType;
+};
+
+export type DecisionFlowEdge = Edge<BranchEdgeData>;

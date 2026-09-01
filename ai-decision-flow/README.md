@@ -119,3 +119,33 @@ Implemented in this stage:
 The node data currently stores a title and prompt. The graph remains entirely local in Stage 1.
 
 Stage 2 adds explicit `YES` and `NO` branch semantics to outgoing edges.
+## Stage 2 — YES / NO branches
+
+Decision nodes now expose two explicit source handles:
+
+- green `YES`
+- red `NO`
+
+Every branch stores its semantic value in graph state:
+
+```ts
+type BranchType = "YES" | "NO";
+
+type BranchEdgeData = {
+  branch: BranchType;
+};
+```
+
+The connection handler derives the branch from the source handle and writes it to `edge.data.branch`.
+
+Additional Stage 2 rules:
+
+- one YES branch maximum per source node
+- one NO branch maximum per source node
+- self-loop connections are rejected
+- YES and NO branches use distinct colors and labels
+- the sidebar shows live YES/NO branch counts
+
+This means the graph is now executable in principle: once a decision produces `YES` or `NO`, the workflow can select the edge whose `data.branch` matches that result.
+
+Stage 3 sends this graph to Inngest and implements deterministic traversal with a durable step for each visited node.

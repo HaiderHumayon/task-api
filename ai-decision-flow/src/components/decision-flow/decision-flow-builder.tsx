@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   addEdge,
   Background,
@@ -10,8 +15,6 @@ import {
   MiniMap,
   ReactFlow,
   type Connection,
-  type Edge,
-  type Node,
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
@@ -19,23 +22,97 @@ import "@xyflow/react/dist/style.css";
 import {
   Bot,
   Cable,
+  Check,
+  GitBranch,
   MousePointer2,
   Network,
   Plus,
   Sparkles,
+  X,
 } from "lucide-react";
 
 import { DecisionNode } from "./decision-node";
 import type {
+  BranchType,
   DecisionFlowEdge,
   DecisionFlowNode,
 } from "./types";
+
+const branchVisuals = {
+  YES: {
+    stroke: "#34d399",
+    text: "#6ee7b7",
+    background: "#052e26",
+  },
+  NO: {
+    stroke: "#fb7185",
+    text: "#fda4af",
+    background: "#4c0519",
+  },
+} satisfies Record<
+  BranchType,
+  {
+    stroke: string;
+    text: string;
+    background: string;
+  }
+>;
+
+function makeBranchEdge({
+  id,
+  source,
+  target,
+  branch,
+}: {
+  id: string;
+  source: string;
+  target: string;
+  branch: BranchType;
+}): DecisionFlowEdge {
+  const visual = branchVisuals[branch];
+
+  return {
+    id,
+    source,
+    target,
+    sourceHandle: branch.toLowerCase(),
+    targetHandle: "input",
+    type: "smoothstep",
+    animated: true,
+    label: branch,
+    data: {
+      branch,
+    },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: visual.stroke,
+    },
+    style: {
+      stroke: visual.stroke,
+      strokeWidth: 2.5,
+    },
+    labelStyle: {
+      fill: visual.text,
+      fontWeight: 800,
+      fontSize: 11,
+    },
+    labelBgStyle: {
+      fill: visual.background,
+      fillOpacity: 0.96,
+    },
+    labelBgPadding: [7, 4],
+    labelBgBorderRadius: 6,
+  };
+}
 
 const initialNodes: DecisionFlowNode[] = [
   {
     id: "decision-1",
     type: "decision",
-    position: { x: 80, y: 90 },
+    position: {
+      x: 390,
+      y: 60,
+    },
     data: {
       title: "Intent check",
       prompt:
@@ -45,55 +122,63 @@ const initialNodes: DecisionFlowNode[] = [
   {
     id: "decision-2",
     type: "decision",
-    position: { x: 470, y: 300 },
+    position: {
+      x: 100,
+      y: 390,
+    },
     data: {
-      title: "Risk check",
+      title: "Confidence check",
       prompt:
-        "Would completing this request create a meaningful safety, privacy, or compliance risk?",
+        "Is there enough information and confidence to continue without asking the user a follow-up question?",
     },
   },
   {
     id: "decision-3",
     type: "decision",
-    position: { x: 860, y: 510 },
+    position: {
+      x: 700,
+      y: 390,
+    },
     data: {
-      title: "Action check",
+      title: "Clarification check",
       prompt:
-        "Is there enough confidence to continue to the final action without asking a follow-up question?",
+        "Would one focused clarification materially improve the quality of the final result?",
     },
   },
 ];
 
 const initialEdges: DecisionFlowEdge[] = [
-  {
-    id: "edge-1-2",
+  makeBranchEdge({
+    id: "edge-1-yes-2",
     source: "decision-1",
     target: "decision-2",
-    animated: true,
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-    },
-    style: {
-      strokeWidth: 2,
-    },
-  },
-  {
-    id: "edge-2-3",
-    source: "decision-2",
+    branch: "YES",
+  }),
+  makeBranchEdge({
+    id: "edge-1-no-3",
+    source: "decision-1",
     target: "decision-3",
-    animated: true,
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-    },
-    style: {
-      strokeWidth: 2,
-    },
-  },
+    branch: "NO",
+  }),
 ];
 
 const nodeTypes = {
   decision: DecisionNode,
 };
+
+function branchFromConnection(
+  connection: Connection,
+): BranchType | null {
+  if (connection.sourceHandle === "yes") {
+    return "YES";
+  }
+
+  if (connection.sourceHandle === "no") {
+    return "NO";
+  }
+
+  return null;
+}
 
 export function DecisionFlowBuilder() {
   const [nodes, setNodes, onNodesChange] =
@@ -102,7 +187,12 @@ export function DecisionFlowBuilder() {
     useEdgesState<DecisionFlowEdge>(initialEdges);
   const [selectedNodeId, setSelectedNodeId] =
     useState<string | null>("decision-1");
+  const [branchMessage, setBranchMessage] =
+    useState(
+      "Connect from the green YES or red NO handle.",
+    );
   const nextNodeNumber = useRef(4);
+  const nextEdgeNumber = useRef(3);
 
   const updatePrompt = useCallback(
     (nodeId: string, prompt: string) => {
@@ -137,23 +227,65 @@ export function DecisionFlowBuilder() {
 
   const onConnect = useCallback(
     (connection: Connection) => {
+      const branch =
+        branchFromConnection(connection);
+
+      if (
+        !branch ||
+        !connection.source ||
+        !connection.target
+      ) {
+        setBranchMessage(
+          "Use one of the labeled YES / NO source handles.",
+        );
+        return;
+      }
+
+      if (
+        connection.source === connection.target
+      ) {
+        setBranchMessage(
+          "A decision cannot branch to itself.",
+        );
+        return;
+      }
+
+      const existingBranch = edges.find(
+        (edge) =>
+          edge.source === connection.source &&
+          edge.data?.branch === branch,
+      );
+
+      if (existingBranch) {
+        setBranchMessage(
+          `${connection.source} already has a ${branch} branch. Delete or reconnect that edge first.`,
+        );
+        return;
+      }
+
+      const edgeNumber =
+        nextEdgeNumber.current;
+      nextEdgeNumber.current += 1;
+
+      const newEdge = makeBranchEdge({
+        id: `edge-${edgeNumber}-${branch.toLowerCase()}`,
+        source: connection.source,
+        target: connection.target,
+        branch,
+      });
+
       setEdges((currentEdges) =>
         addEdge(
-          {
-            ...connection,
-            animated: true,
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-            },
-            style: {
-              strokeWidth: 2,
-            },
-          },
+          newEdge,
           currentEdges,
         ),
       );
+
+      setBranchMessage(
+        `${branch} branch connected: ${connection.source} → ${connection.target}`,
+      );
     },
-    [setEdges],
+    [edges, setEdges],
   );
 
   const addDecisionNode = useCallback(() => {
@@ -167,12 +299,15 @@ export function DecisionFlowBuilder() {
       type: "decision",
       position: {
         x: 120 + ((number - 1) % 3) * 340,
-        y: 120 + Math.floor((number - 1) / 3) * 260,
+        y:
+          120 +
+          Math.floor((number - 1) / 3) *
+            280,
       },
       data: {
         title: `Decision ${number}`,
         prompt:
-          "Write a clear question that this AI decision node should evaluate.",
+          "Write a clear question that the AI must answer with YES or NO.",
       },
     };
 
@@ -181,11 +316,22 @@ export function DecisionFlowBuilder() {
       newNode,
     ]);
     setSelectedNodeId(nodeId);
+    setBranchMessage(
+      `${nodeId} added. Connect its YES and NO outcomes.`,
+    );
   }, [setNodes]);
 
   const selectedNode = nodes.find(
     (node) => node.id === selectedNodeId,
   );
+
+  const yesCount = edges.filter(
+    (edge) => edge.data?.branch === "YES",
+  ).length;
+
+  const noCount = edges.filter(
+    (edge) => edge.data?.branch === "NO",
+  ).length;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -198,12 +344,13 @@ export function DecisionFlowBuilder() {
             </div>
 
             <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-              Visual workflow builder
+              YES / NO workflow builder
             </h1>
 
             <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">
-              Build the graph visually now. In later stages each decision node
-              becomes an executable Inngest step powered by an LLM.
+              Every decision has exactly two semantic outcomes. The branch value
+              is stored on the edge and will drive execution in the Inngest
+              workflow.
             </p>
           </div>
 
@@ -218,7 +365,7 @@ export function DecisionFlowBuilder() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1600px] gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_310px] lg:p-8">
+      <div className="mx-auto grid max-w-[1600px] gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:p-8">
         <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-800 bg-slate-950/70 px-4 py-3 text-xs text-slate-400">
             <span className="inline-flex items-center gap-2">
@@ -226,18 +373,23 @@ export function DecisionFlowBuilder() {
               Drag nodes
             </span>
 
-            <span className="inline-flex items-center gap-2">
-              <Cable size={14} />
-              Drag handle to connect
+            <span className="inline-flex items-center gap-2 text-emerald-300">
+              <Check size={14} />
+              Green handle = YES
+            </span>
+
+            <span className="inline-flex items-center gap-2 text-rose-300">
+              <X size={14} />
+              Red handle = NO
             </span>
 
             <span className="inline-flex items-center gap-2">
-              <Bot size={14} />
-              Edit prompts inline
+              <Cable size={14} />
+              One branch of each type per node
             </span>
           </div>
 
-          <div className="h-[720px]">
+          <div className="h-[740px]">
             <ReactFlow
               nodes={displayNodes}
               edges={edges}
@@ -257,11 +409,6 @@ export function DecisionFlowBuilder() {
               }}
               minZoom={0.35}
               maxZoom={1.8}
-              defaultEdgeOptions={{
-                markerEnd: {
-                  type: MarkerType.ArrowClosed,
-                },
-              }}
               proOptions={{
                 hideAttribution: false,
               }}
@@ -308,9 +455,56 @@ export function DecisionFlowBuilder() {
                   {edges.length}
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  Connections
+                  Branches
                 </div>
               </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                <div className="flex items-center gap-2 text-emerald-300">
+                  <Check size={15} />
+                  <span className="text-sm font-semibold">
+                    YES
+                  </span>
+                </div>
+                <div className="mt-2 text-xl font-semibold text-white">
+                  {yesCount}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-3">
+                <div className="flex items-center gap-2 text-rose-300">
+                  <X size={15} />
+                  <span className="text-sm font-semibold">
+                    NO
+                  </span>
+                </div>
+                <div className="mt-2 text-xl font-semibold text-white">
+                  {noCount}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
+            <div className="flex items-center gap-2">
+              <GitBranch
+                size={17}
+                className="text-violet-300"
+              />
+              <h2 className="font-semibold text-white">
+                Branch rule
+              </h2>
+            </div>
+
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Each source node can have at most one YES branch and one NO branch.
+              The value is stored in <code>edge.data.branch</code>.
+            </p>
+
+            <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs leading-5 text-slate-300">
+              {branchMessage}
             </div>
           </section>
 
@@ -320,49 +514,43 @@ export function DecisionFlowBuilder() {
             </h2>
 
             {selectedNode ? (
-              <div className="mt-4">
-                <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-300">
-                    {selectedNode.id}
-                  </p>
+              <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-300">
+                  {selectedNode.id}
+                </p>
 
-                  <p className="mt-2 font-medium text-white">
-                    {selectedNode.data.title}
-                  </p>
+                <p className="mt-2 font-medium text-white">
+                  {selectedNode.data.title}
+                </p>
 
-                  <p className="mt-2 line-clamp-5 text-sm leading-6 text-slate-400">
-                    {selectedNode.data.prompt}
-                  </p>
-                </div>
-
-                <p className="mt-3 text-xs leading-5 text-slate-500">
-                  Edit the prompt directly inside the node on the canvas.
+                <p className="mt-2 line-clamp-5 text-sm leading-6 text-slate-400">
+                  {selectedNode.data.prompt}
                 </p>
               </div>
             ) : (
               <p className="mt-3 text-sm leading-6 text-slate-500">
-                Click a node to inspect it here.
+                Click a node to inspect it.
               </p>
             )}
           </section>
 
           <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
             <h2 className="font-semibold text-white">
-              Stage 1 checkpoint
+              Stage 2 checkpoint
             </h2>
 
             <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-400">
-              <li>✓ React Flow canvas</li>
-              <li>✓ Add decision nodes</li>
-              <li>✓ Move nodes</li>
-              <li>✓ Connect nodes</li>
-              <li>✓ Edit prompts inline</li>
-              <li>✓ Controlled local graph state</li>
+              <li>✓ Separate YES / NO handles</li>
+              <li>✓ Branch value stored in edge data</li>
+              <li>✓ Labeled, color-coded branches</li>
+              <li>✓ Duplicate branch prevention</li>
+              <li>✓ Self-loop prevention</li>
+              <li>✓ Branch counts</li>
             </ul>
 
             <p className="mt-4 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3 text-xs leading-5 text-violet-200">
-              Next stage: every outgoing connection becomes an explicit YES or
-              NO branch.
+              Next: send the graph into Inngest and traverse the matching branch
+              after each decision step.
             </p>
           </section>
         </aside>
