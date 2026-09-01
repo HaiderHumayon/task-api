@@ -22,7 +22,6 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   Activity,
-  Cable,
   Download,
   Check,
   CircleStop,
@@ -44,6 +43,8 @@ import {
   parsePortableGraph,
   serializeGraph,
 } from "@/lib/graph-persistence";
+
+import { Button } from "@/components/ui/button";
 
 import { DecisionNode } from "./decision-node";
 import type {
@@ -1020,34 +1021,34 @@ export function DecisionFlowBuilder() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button
               type="button"
               onClick={saveGraph}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm font-semibold text-white transition hover:border-slate-600"
             >
               <Save size={16} />
               Save
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="button"
               onClick={loadGraph}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm font-semibold text-white transition hover:border-slate-600"
             >
               <FolderOpen size={16} />
               Load
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="button"
               onClick={exportGraph}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm font-semibold text-white transition hover:border-slate-600"
             >
               <Download size={16} />
               Export JSON
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="button"
               onClick={() => {
                 importInputRef.current?.click();
@@ -1056,7 +1057,7 @@ export function DecisionFlowBuilder() {
             >
               <FileUp size={16} />
               Import JSON
-            </button>
+            </Button>
 
             <input
               ref={importInputRef}
@@ -1072,7 +1073,7 @@ export function DecisionFlowBuilder() {
               }}
             />
 
-            <button
+            <Button
               type="button"
               onClick={
                 addDecisionNode
@@ -1081,9 +1082,9 @@ export function DecisionFlowBuilder() {
             >
               <Plus size={16} />
               Add node
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="button"
               disabled={
                 isDispatching ||
@@ -1100,7 +1101,7 @@ export function DecisionFlowBuilder() {
               "running"
                 ? "Running..."
                 : "Run with AI"}
-            </button>
+            </Button>
           </div>
         </div>
       </header>

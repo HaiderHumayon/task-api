@@ -1,0 +1,60 @@
+{
+    "version":  1,
+    "savedAt":  "2026-09-02T04:02:01.4829447+05:00",
+    "nodes":  [
+                  {
+                      "id":  "decision-1",
+                      "type":  "decision",
+                      "position":  {
+                                       "x":  390,
+                                       "y":  60
+                                   },
+                      "data":  {
+                                   "title":  "Eligibility check",
+                                   "prompt":  "Does this request meet the first decision criterion?"
+                               }
+                  },
+                  {
+                      "id":  "decision-2",
+                      "type":  "decision",
+                      "position":  {
+                                       "x":  100,
+                                       "y":  390
+                                   },
+                      "data":  {
+                                   "title":  "Second decision",
+                                   "prompt":  "Should the workflow continue on the YES path?"
+                               }
+                  },
+                  {
+                      "id":  "decision-3",
+                      "type":  "decision",
+                      "position":  {
+                                       "x":  700,
+                                       "y":  390
+                                   },
+                      "data":  {
+                                   "title":  "Alternative decision",
+                                   "prompt":  "Should the alternative branch continue?"
+                               }
+                  }
+              ],
+    "edges":  [
+                  {
+                      "id":  "edge-1-yes",
+                      "source":  "decision-1",
+                      "target":  "decision-2",
+                      "sourceHandle":  "yes",
+                      "targetHandle":  "input",
+                      "branch":  "YES"
+                  },
+                  {
+                      "id":  "edge-1-no",
+                      "source":  "decision-1",
+                      "target":  "decision-3",
+                      "sourceHandle":  "no",
+                      "targetHandle":  "input",
+                      "branch":  "NO"
+                  }
+              ]
+}

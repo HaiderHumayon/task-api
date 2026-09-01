@@ -1,0 +1,36 @@
+{
+    "generatedAt":  "2026-09-02T04:02:01.4705306+05:00",
+    "endpoint":  "POST /api/execute",
+    "dispatchStatus":  202,
+    "eventId":  "01M1FKADJS5AAANP3YFWGB28RK",
+    "finalStatus":  "completed",
+    "executionOrder":  [
+                           "proof-1",
+                           "proof-2",
+                           "proof-3"
+                       ],
+    "decisions":  {
+                      "proof-1":  "YES",
+                      "proof-2":  "NO",
+                      "proof-3":  "YES"
+                  },
+    "models":  [
+                   "openai/gpt-oss-120b"
+               ],
+    "terminalNodeId":  "proof-3",
+    "verifiedBranches":  [
+                             "proof-1 YES -\u003e proof-2",
+                             "proof-2 NO -\u003e proof-3"
+                         ],
+    "assertions":  {
+                       "nextHealth200":  true,
+                       "inngestServe200":  true,
+                       "inngestDevServerReady":  true,
+                       "executeAccepted202":  true,
+                       "strictYesNoObserved":  true,
+                       "yesBranchObserved":  true,
+                       "noBranchObserved":  true,
+                       "executionOrderTracked":  true,
+                       "completed":  true
+                   }
+}

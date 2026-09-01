@@ -364,3 +364,82 @@ NO
 ```
 
 The user instruction and the decision prompt are sent together as a single user message for broad OpenAI-compatible-provider support.
+## Final live proof
+
+A real LLM + Inngest execution completed successfully during the final submission audit.
+
+Verified end-to-end behavior:
+
+- `GET /api/health` returned HTTP `200`
+- `GET /api/inngest` returned HTTP `200` in local development mode
+- Inngest Dev Server connected to the Next.js serve endpoint
+- `POST /api/execute` returned HTTP `202`
+- real OpenAI SDK calls executed inside Inngest `step.run(...)`
+- strict binary decisions observed: `YES`, `NO`, `YES`
+- execution order: `proof-1 -> proof-2 -> proof-3`
+- YES edge traversal verified
+- NO edge traversal verified
+- execution state reached `completed`
+- the configured model was recorded in execution results
+
+Evidence:
+
+- [`docs/live-proof.md`](./docs/live-proof.md)
+- [`docs/live-proof.json`](./docs/live-proof.json)
+- [`docs/sample-workflow.json`](./docs/sample-workflow.json)
+
+No API key or `.env.local` content is committed.
+
+## Assignment acceptance checklist
+
+### Required stack
+
+- Next.js + TypeScript
+- React Flow via `@xyflow/react`
+- Inngest
+- OpenAI SDK
+- Shadcn component system
+- environment-variable configuration
+
+### Visual workflow
+
+- add decision nodes
+- move nodes
+- connect nodes
+- edit prompts inline
+- explicit YES and NO source handles
+- color-coded and labeled YES/NO edges
+- controlled local graph state
+
+### Execution
+
+- graph dispatched through `decision-flow/execute`
+- one durable `step.run(...)` for every visited node
+- current node prompt sent to the configured LLM
+- model output validated as exactly YES or NO
+- matching YES/NO edge selected
+- graph traversal continues until a terminal node
+- execution order tracked
+- cycle protection
+- Inngest retries
+
+### Polish
+
+The project includes more than three polish features:
+
+1. queued/running/completed/failed execution states
+2. live execution logs
+3. active-node and visited-node visualization
+4. traversed-edge highlighting
+5. per-node decision badges
+6. browser save/load
+7. JSON import/export
+8. import validation and error handling
+
+### Shadcn integration
+
+The UI now includes the standard Shadcn component configuration in `components.json`, the shared `cn()` utility, and a source-owned Shadcn `Button` component built with `class-variance-authority` and Radix Slot. The workflow-builder actions use that component directly.
+
+### Production note
+
+The assignment run-state store is intentionally process-local. A multi-instance production deployment should replace it with shared durable storage such as PostgreSQL or Redis. Inngest remains responsible for durable workflow execution and retries.
