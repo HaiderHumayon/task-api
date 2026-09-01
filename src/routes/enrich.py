@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from src.llm.client import LLMProviderError, LLMTimeoutError
 from src.llm.processor import ModelOutputRejected, enrich_with_validation
 from src.llm.schema import EnrichRequest, EnrichResponse
 
@@ -50,6 +51,16 @@ async def enrich_book(request: Request):
     except ValidationError as exc:
         return _input_error(exc)
 
+    # Production kill switch: deterministic response, zero provider calls.
+    if os.getenv("LLM_ENABLED", "true").lower() == "false":
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "LLM feature disabled",
+                "detail": "The enrichment model is temporarily unavailable.",
+            },
+        )
+
     if os.getenv("LLM_STUB", "0") == "1":
         return EnrichResponse(
             category="fiction",
@@ -69,6 +80,22 @@ async def enrich_book(request: Request):
             status_code=422,
             content={
                 "error": "Model output failed validation",
+                "detail": exc.message,
+            },
+        )
+    except LLMTimeoutError as exc:
+        return JSONResponse(
+            status_code=504,
+            content={
+                "error": "LLM provider timeout",
+                "detail": str(exc),
+            },
+        )
+    except LLMProviderError as exc:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "LLM provider request failed",
                 "detail": exc.message,
             },
         )
