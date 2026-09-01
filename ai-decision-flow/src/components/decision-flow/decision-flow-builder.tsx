@@ -326,8 +326,8 @@ export function DecisionFlowBuilder() {
     );
   }, [setNodes]);
 
-  const dispatchTestRun = useCallback(
-    async (branch: BranchType) => {
+  const dispatchAiRun =
+    useCallback(async () => {
       if (nodes.length === 0) {
         setDispatchMessage(
           "Add at least one node before running.",
@@ -335,50 +335,73 @@ export function DecisionFlowBuilder() {
         return;
       }
 
+      const invalidPrompt =
+        nodes.find(
+          (node) =>
+            !node.data.prompt.trim(),
+        );
+
+      if (invalidPrompt) {
+        setDispatchMessage(
+          `${invalidPrompt.id} needs a prompt before execution.`,
+        );
+        return;
+      }
+
       setIsDispatching(true);
       setDispatchMessage(
-        `Dispatching deterministic ${branch} test run...`,
+        "Dispatching graph to Inngest for real LLM decisions...",
       );
 
       try {
         const payload = {
-          nodes: nodes.map((node) => ({
-            id: node.id,
-            title: node.data.title,
-            prompt: node.data.prompt,
-          })),
-          edges: edges.map((edge) => ({
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            branch: edge.data?.branch,
-          })),
-          startNodeId: nodes[0].id,
-          decisions: Object.fromEntries(
-            nodes.map((node) => [
-              node.id,
-              branch,
-            ]),
+          nodes: nodes.map(
+            (node) => ({
+              id: node.id,
+              title:
+                node.data.title,
+              prompt:
+                node.data.prompt,
+            }),
           ),
+          edges: edges.map(
+            (edge) => ({
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              branch:
+                edge.data?.branch,
+            }),
+          ),
+          startNodeId:
+            nodes[0].id,
         };
 
-        const response = await fetch(
-          "/api/execute",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
+        const response =
+          await fetch(
+            "/api/execute",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body:
+                JSON.stringify(
+                  payload,
+                ),
             },
-            body: JSON.stringify(payload),
-          },
-        );
+          );
 
-        const result = (await response.json()) as {
-          accepted?: boolean;
-          eventId?: string | null;
-          error?: string;
-        };
+        const result =
+          (await response.json()) as {
+            accepted?: boolean;
+            eventId?:
+              string | null;
+            error?: string;
+            executionMode?:
+              string;
+          };
 
         if (!response.ok) {
           throw new Error(
@@ -388,7 +411,7 @@ export function DecisionFlowBuilder() {
         }
 
         setDispatchMessage(
-          `Accepted by Inngest · event ${result.eventId ?? "queued"} · ${branch} test decisions`,
+          `Accepted by Inngest · event ${result.eventId ?? "queued"} · LLM execution`,
         );
       } catch (error) {
         setDispatchMessage(
@@ -397,11 +420,11 @@ export function DecisionFlowBuilder() {
             : "Workflow dispatch failed.",
         );
       } finally {
-        setIsDispatching(false);
+        setIsDispatching(
+          false,
+        );
       }
-    },
-    [edges, nodes],
-  );
+    }, [edges, nodes]);
   const selectedNode = nodes.find(
     (node) => node.id === selectedNodeId,
   );
@@ -622,62 +645,50 @@ export function DecisionFlowBuilder() {
                 className="text-amber-300"
               />
               <h2 className="font-semibold text-white">
-                Inngest test run
+                Run AI workflow
               </h2>
             </div>
 
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Stage 3 uses deterministic decisions so traversal can be tested
-              before the LLM is connected.
+              Each visited node sends its prompt to the configured LLM inside a
+              durable Inngest step. The model must return exactly YES or NO.
             </p>
 
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                disabled={isDispatching}
-                onClick={() => {
-                  void dispatchTestRun("YES");
-                }}
-                className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Test YES path
-              </button>
-
-              <button
-                type="button"
-                disabled={isDispatching}
-                onClick={() => {
-                  void dispatchTestRun("NO");
-                }}
-                className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Test NO path
-              </button>
-            </div>
+            <button
+              type="button"
+              disabled={isDispatching}
+              onClick={() => {
+                void dispatchAiRun();
+              }}
+              className="mt-4 w-full rounded-xl bg-amber-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isDispatching
+                ? "Dispatching..."
+                : "Run with AI"}
+            </button>
 
             <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs leading-5 text-slate-300">
               {dispatchMessage}
             </div>
           </section>
-
           <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
             <h2 className="font-semibold text-white">
-              Stage 3 checkpoint
+              Stage 4 checkpoint
             </h2>
 
             <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-400">
-              <li>✓ Typed Inngest execution event</li>
-              <li>✓ POST /api/execute dispatcher</li>
-              <li>✓ Graph validation before dispatch</li>
-              <li>✓ One step.run per visited node</li>
-              <li>✓ YES / NO edge traversal</li>
-              <li>✓ Execution-order tracking</li>
-              <li>✓ Cycle protection</li>
+              <li>✓ OpenAI SDK inside each visited node</li>
+              <li>✓ Prompt sent to the configured LLM</li>
+              <li>✓ Strict YES / NO response validation</li>
+              <li>✓ One durable step.run per visited node</li>
+              <li>✓ Matching YES / NO edge traversal</li>
+              <li>✓ Execution-order tracking preserved</li>
+              <li>✓ Inngest retries on failed LLM steps</li>
             </ul>
 
             <p className="mt-4 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3 text-xs leading-5 text-violet-200">
-              Next: replace deterministic test decisions with a real LLM call
-              that must return only YES or NO.
+              Next: surface execution state and logs in the UI so the active
+              node, decisions, and final traversal are visible.
             </p>
           </section>
         </aside>

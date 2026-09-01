@@ -3,18 +3,23 @@ import {
   inngest,
   type DecisionFlowEventData,
 } from "@/inngest/client";
+import {
+  decideWithLlm,
+  type StrictDecision,
+} from "@/lib/decision-engine";
 
 type ExecutionResult = {
   nodeId: string;
   title: string;
   prompt: string;
-  decision: "YES" | "NO";
+  decision: StrictDecision;
+  model: string;
 };
 
 function getNextEdge(
   edges: DecisionFlowEventData["edges"],
   nodeId: string,
-  decision: "YES" | "NO",
+  decision: StrictDecision,
 ) {
   return edges.find(
     (edge) =>
@@ -40,7 +45,6 @@ export const executeDecisionFlow =
         nodes,
         edges,
         startNodeId,
-        decisions,
       } = event.data;
 
       const nodesById = new Map(
@@ -81,28 +85,39 @@ export const executeDecisionFlow =
         const result = await step.run(
           `node-${stepIndex + 1}-${currentNodeId}`,
           async () => {
-            const decision =
-              decisions[currentNodeId] ??
-              "YES";
+            const llmResult =
+              await decideWithLlm(
+                node.prompt,
+              );
 
             logger.info(
               {
-                nodeId: currentNodeId,
-                decision,
+                nodeId:
+                  currentNodeId,
+                decision:
+                  llmResult.decision,
+                model:
+                  llmResult.model,
               },
-              "Decision node executed",
+              "AI decision node executed",
             );
 
             return {
-              nodeId: currentNodeId,
+              nodeId:
+                currentNodeId,
               title: node.title,
               prompt: node.prompt,
-              decision,
+              decision:
+                llmResult.decision,
+              model:
+                llmResult.model,
             } satisfies ExecutionResult;
           },
         );
 
-        executionOrder.push(currentNodeId);
+        executionOrder.push(
+          currentNodeId,
+        );
         results.push(result);
 
         const nextEdge = getNextEdge(

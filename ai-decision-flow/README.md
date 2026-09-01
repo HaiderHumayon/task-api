@@ -197,3 +197,59 @@ http://localhost:8288
 ```
 
 Stage 4 replaces the deterministic decision map with an OpenAI SDK call at each visited node and validates a strict `YES` or `NO` response.
+## Stage 4 — real LLM decisions
+
+Each visited graph node now calls the OpenAI SDK inside its own Inngest `step.run(...)`.
+
+The node prompt is sent to the LLM with a system instruction that requires exactly one binary output:
+
+```text
+YES
+```
+
+or:
+
+```text
+NO
+```
+
+`parseStrictDecision()` validates the returned text with Zod. Any other output throws an error, which allows the Inngest function retry policy to handle the failed execution rather than silently guessing a branch.
+
+### Environment
+
+Create a local `.env.local` file:
+
+```env
+INNGEST_DEV=1
+OPENAI_API_KEY=your-key-here
+OPENAI_BASE_URL=
+OPENAI_MODEL=
+```
+
+`OPENAI_BASE_URL` is optional. Leave it empty for OpenAI or set it to an OpenAI-compatible provider endpoint.
+
+`OPENAI_MODEL` is optional and defaults to:
+
+```text
+gpt-4o-mini
+```
+
+Real `.env` and `.env.local` files remain ignored by Git.
+
+### Execution
+
+The workflow now:
+
+1. receives the graph through `decision-flow/execute`
+2. starts at the first node sent by the UI
+3. executes that node inside `step.run(...)`
+4. sends the node prompt to the LLM
+5. accepts only `YES` or `NO`
+6. records the decision and model
+7. selects the outgoing edge with the matching `edge.branch`
+8. continues until no matching edge exists
+9. returns the complete execution order and node results
+
+The Stage 4 UI exposes one `Run with AI` action rather than deterministic test controls.
+
+A real API key is intentionally not stored or committed. Final live execution evidence is added in the later execution/polish stage.

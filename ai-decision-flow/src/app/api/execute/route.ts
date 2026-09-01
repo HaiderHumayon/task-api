@@ -92,9 +92,8 @@ export async function POST(
     );
   }
 
-  const graphError = validateGraph(
-    parsed.data,
-  );
+  const graphError =
+    validateGraph(parsed.data);
 
   if (graphError) {
     return NextResponse.json(
@@ -124,6 +123,7 @@ export async function POST(
         parsed.data.nodes.length,
       edgeCount:
         parsed.data.edges.length,
+      executionMode: "llm",
     },
     {
       status: 202,
