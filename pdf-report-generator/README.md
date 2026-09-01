@@ -72,3 +72,41 @@ SELECT COUNT(*) FROM books -> 60
 ```
 
 The generated `report.db` is intentionally ignored by Git. The committed seed script is the reproducible recipe.
+## Stage 2 - Aggregation queries
+
+`report_data.py` contains the reusable query layer for the report.
+
+Run it with:
+
+```powershell
+.\.venv\Scripts\python.exe report_data.py
+```
+
+The summary query calculates the total number of books and average price:
+
+```sql
+SELECT
+    COUNT(*) AS total_books,
+    ROUND(AVG(price), 2) AS average_price
+FROM books;
+```
+
+The five most expensive books are selected with:
+
+```sql
+SELECT title, price, rating, url
+FROM books
+ORDER BY price DESC, title ASC
+LIMIT 5;
+```
+
+Rating distribution is calculated with:
+
+```sql
+SELECT rating, COUNT(*) AS book_count
+FROM books
+GROUP BY rating
+ORDER BY rating ASC;
+```
+
+The function also loads the complete 60-book table so the next stage can render a multi-page PDF without duplicating database logic.
