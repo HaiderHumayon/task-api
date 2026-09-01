@@ -5,7 +5,9 @@ export const strictDecisionSchema =
   z.enum(["YES", "NO"]);
 
 export type StrictDecision =
-  z.infer<typeof strictDecisionSchema>;
+  z.infer<
+    typeof strictDecisionSchema
+  >;
 
 export type LlmDecisionResult = {
   decision: StrictDecision;
@@ -15,7 +17,8 @@ export type LlmDecisionResult = {
 function requireEnvironmentValue(
   name: string,
 ) {
-  const value = process.env[name]?.trim();
+  const value =
+    process.env[name]?.trim();
 
   if (!value) {
     throw new Error(
@@ -46,7 +49,7 @@ export function parseStrictDecision(
   return parsed.data;
 }
 
-function createOpenAIClient() {
+function getConfiguration() {
   const apiKey =
     requireEnvironmentValue(
       "OPENAI_API_KEY",
@@ -55,56 +58,73 @@ function createOpenAIClient() {
   const baseURL =
     process.env.OPENAI_BASE_URL?.trim();
 
-  return new OpenAI({
+  const model =
+    process.env.OPENAI_MODEL?.trim() ||
+    "gpt-4o-mini";
+
+  return {
     apiKey,
-    ...(baseURL
-      ? {
-          baseURL,
-        }
-      : {}),
-  });
+    baseURL,
+    model,
+  };
 }
 
 export async function decideWithLlm(
   prompt: string,
 ): Promise<LlmDecisionResult> {
-  const model =
-    process.env.OPENAI_MODEL?.trim() ||
-    "gpt-4o-mini";
+  const {
+    apiKey,
+    baseURL,
+    model,
+  } = getConfiguration();
 
   const client =
-    createOpenAIClient();
+    new OpenAI({
+      apiKey,
+      ...(baseURL
+        ? {
+            baseURL,
+          }
+        : {}),
+    });
 
   const completion =
     await client.chat.completions.create({
       model,
       temperature: 0,
-      max_tokens: 3,
+      max_completion_tokens: 1024,
       messages: [
         {
-          role: "system",
-          content:
-            "You are a binary decision engine. Answer the user's decision prompt with exactly one token: YES or NO. Do not explain, punctuate, qualify, or add any other text.",
-        },
-        {
           role: "user",
-          content: prompt,
+          content: [
+            "Act as a binary decision engine.",
+            "Answer the decision prompt with exactly YES or NO.",
+            "Do not explain, punctuate, qualify, or add any other text.",
+            "",
+            "Decision prompt:",
+            prompt,
+          ].join("\n"),
         },
       ],
     });
 
+  const choice =
+    completion.choices[0];
+
   const rawOutput =
-    completion.choices[0]?.message.content;
+    choice?.message.content?.trim();
 
   if (!rawOutput) {
     throw new Error(
-      "LLM returned an empty decision.",
+      `LLM returned an empty final decision. Finish reason: ${choice?.finish_reason ?? "unknown"}.`,
     );
   }
 
   return {
     decision:
-      parseStrictDecision(rawOutput),
+      parseStrictDecision(
+        rawOutput,
+      ),
     model,
   };
 }

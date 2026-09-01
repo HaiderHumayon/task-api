@@ -347,3 +347,20 @@ At this point the assignment includes multiple polish features beyond the requir
 5. error validation and Inngest retries
 
 The remaining checkpoint is final live proof with an actual configured LLM and the local Inngest Dev Server.
+## Reasoning-model compatibility
+
+The decision engine uses `max_completion_tokens` rather than the deprecated `max_tokens` field.
+
+A larger completion budget is intentional because reasoning models such as GPT-OSS may spend generated tokens on internal reasoning before emitting the final answer. The final `message.content` is still validated strictly and must contain exactly:
+
+```text
+YES
+```
+
+or:
+
+```text
+NO
+```
+
+The user instruction and the decision prompt are sent together as a single user message for broad OpenAI-compatible-provider support.
