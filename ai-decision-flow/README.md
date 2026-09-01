@@ -98,3 +98,24 @@ const isDev =
 ```
 
 This means local development does not require an Inngest Cloud signing key. Production/cloud deployment should provide the real `INNGEST_SIGNING_KEY` and should not set `INNGEST_DEV=1`.
+## Stage 1 — visual canvas
+
+The placeholder page is replaced with a controlled React Flow workspace.
+
+Implemented in this stage:
+
+- three starter decision nodes
+- drag/reposition nodes
+- connect nodes by dragging source/target handles
+- add new decision nodes
+- edit each prompt directly inside its node
+- local controlled node/edge state with `useNodesState` and `useEdgesState`
+- animated arrow connections
+- zoom/pan controls
+- minimap
+- selected-node summary
+- live node and connection counts
+
+The node data currently stores a title and prompt. The graph remains entirely local in Stage 1.
+
+Stage 2 adds explicit `YES` and `NO` branch semantics to outgoing edges.
