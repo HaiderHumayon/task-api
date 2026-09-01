@@ -5,17 +5,13 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import Body, FastAPI, HTTPException
 import inngest
 import inngest.fast_api
 
 
 reports: dict[str, dict[str, Any]] = {}
-
-
-class ReportRequest(BaseModel):
-    topic: str
+failure_attempts: dict[str, int] = {}
 
 
 inngest_client = inngest.Inngest(
@@ -40,7 +36,7 @@ async def say_hello(ctx: inngest.Context) -> str:
 @inngest_client.create_function(
     fn_id="make-report",
     trigger=inngest.TriggerEvent(event="report/requested"),
-    retries=0,
+    retries=2,
 )
 async def make_report(ctx: inngest.Context) -> dict[str, Any]:
     report_id = str(ctx.event.data["id"])
@@ -52,6 +48,18 @@ async def make_report(ctx: inngest.Context) -> dict[str, Any]:
     )
 
     def build_report() -> dict[str, Any]:
+        if topic == "fail":
+            current_attempt = failure_attempts.get(report_id, 0) + 1
+            failure_attempts[report_id] = current_attempt
+
+            reports[report_id]["attempts"] = current_attempt
+
+            if current_attempt >= 3:
+                reports[report_id]["status"] = "failed"
+                reports[report_id]["error"] = "The report oven is broken!"
+
+            raise RuntimeError("The report oven is broken!")
+
         result = f"Background report about {topic} is ready."
         reports[report_id] = {
             "id": report_id,
@@ -66,7 +74,7 @@ async def make_report(ctx: inngest.Context) -> dict[str, Any]:
 
 app = FastAPI(
     title="A3 Background Job API",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 
@@ -76,11 +84,23 @@ def health() -> dict[str, str]:
 
 
 @app.post("/reports", status_code=202)
-async def create_report(payload: ReportRequest) -> dict[str, str]:
+async def create_report(
+    payload: dict[str, Any] = Body(...),
+) -> dict[str, str]:
+    topic = payload.get("topic")
+
+    if not isinstance(topic, str) or not topic.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="topic is required and must be a non-empty string",
+        )
+
+    topic = topic.strip()
     report_id = uuid.uuid4().hex
+
     reports[report_id] = {
         "id": report_id,
-        "topic": payload.topic,
+        "topic": topic,
         "status": "pending",
     }
 
@@ -89,24 +109,35 @@ async def create_report(payload: ReportRequest) -> dict[str, str]:
             name="report/requested",
             data={
                 "id": report_id,
-                "topic": payload.topic,
+                "topic": topic,
             },
         )
     )
 
-    return {"id": report_id, "status": "pending"}
+    return {
+        "id": report_id,
+        "status": "pending",
+    }
 
 
 @app.get("/reports/{report_id}")
 def get_report(report_id: str) -> dict[str, Any]:
     report = reports.get(report_id)
+
     if report is None:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Report not found",
+        )
+
     return report
 
 
 inngest.fast_api.serve(
     app,
     inngest_client,
-    [say_hello, make_report],
+    [
+        say_hello,
+        make_report,
+    ],
 )
