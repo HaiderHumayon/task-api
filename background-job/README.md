@@ -1,109 +1,195 @@
-# A3 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â Your First Background Job
+# A3 — Your First Background Job
 
-This folder contains the FlyRank backend assignment for building a FastAPI service whose slow work will later run through Inngest.
+This assignment demonstrates the **accept fast, work in the background, report status** pattern using FastAPI and Inngest. `POST /reports` acknowledges valid work immediately with HTTP `202 Accepted`, while Inngest performs the slow operation separately. The client checks progress with `GET /reports/{id}`.
 
-## Stage 0
+## Run locally
 
-Stage 0 provides the normal API that the background-job system will grow from.
+Use two terminals.
 
-### Run
-
-From this folder:
+### Terminal 1 — FastAPI
 
 ```powershell
+cd background-job
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
-```
-
-Then verify:
-
-```powershell
-curl.exe -i http://localhost:8000/health
-```
-
-Expected JSON:
-
-```json
-{"status":"ok"}
-```
-
-Later stages will add Inngest, `POST /reports`, the background worker, retry behavior, a status endpoint, and a cron heartbeat.
-## Stage 1 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Inngest connected
-
-The API now exposes the Inngest serve endpoint at `/api/inngest` and registers one function:
-
-| Function | Trigger | Durable step | Result |
-|---|---|---|---|
-| `say-hello` | event `test/hello` | sleep 5 seconds | `Hello from the background!` |
-
-Run the two programs in separate terminals.
-
-### Terminal 1 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â FastAPI
-
-```powershell
-cd C:\Users\haide\task-api\background-job
 $env:INNGEST_DEV="1"
 .\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
 ```
 
-### Terminal 2 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Inngest Dev Server
+The API runs at:
+
+```text
+http://localhost:8000
+```
+
+### Terminal 2 — Inngest Dev Server
 
 ```powershell
-cd C:\Users\haide\task-api\background-job
+cd background-job
 npx --ignore-scripts=false inngest-cli@latest dev --no-discovery -u http://localhost:8000/api/inngest
 ```
 
-Open the dashboard:
+The local dashboard runs at:
 
 ```text
 http://localhost:8288
 ```
 
-Local test event:
+## Endpoints
 
-```powershell
-curl.exe -X POST http://localhost:8288/e/test-key `
-  -H "Content-Type: application/json" `
-  -d "{\"name\":\"test/hello\",\"data\":{\"source\":\"manual-test\"}}"
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/health` | Returns `{"status":"ok"}` |
+| POST | `/reports` | Validates input, creates a pending report, sends `report/requested`, and returns HTTP `202` immediately |
+| GET | `/reports/{id}` | Returns the current report state |
+| GET/PUT/POST | `/api/inngest` | Inngest SDK serve endpoint |
+
+An unknown report id returns HTTP `404`.
+
+A missing, blank, or non-string `topic` returns HTTP `400` before an Inngest event is sent.
+
+## Inngest functions
+
+| Function | Trigger | Work |
+|---|---|---|
+| `say-hello` | event `test/hello` | Durable 5-second sleep, then returns `Hello from the background!` |
+| `make-report` | event `report/requested` | Durable 8-second sleep followed by `build-report`; configured with `retries=2` |
+| `heartbeat` | cron `* * * * *` | Runs every minute and logs counts of pending, done, and failed reports |
+
+## Stage 2 proof — 202 → pending → done
+
+The final verification run measured the POST as **39.1 ms**. The required checkpoint is under one second.
+
+### POST `/reports`
+
+Request:
+
+```json
+{
+  "topic": "cats"
+}
 ```
 
-The resulting `say-hello` run should show the `wait-five-seconds` sleep step and finish **Completed** with:
+HTTP `202 Accepted` response:
+
+```json
+{
+  "id": "12454f3eab8d47b68d327d040088c21e",
+  "status": "pending"
+}
+```
+
+### First poll
+
+`GET /reports/12454f3eab8d47b68d327d040088c21e`
+
+```json
+{
+  "id": "12454f3eab8d47b68d327d040088c21e",
+  "topic": "cats",
+  "status": "pending"
+}
+```
+
+### Later poll
+
+After the Inngest `do-the-slow-work` 8-second step and the `build-report` step complete:
+
+```json
+{
+  "id": "12454f3eab8d47b68d327d040088c21e",
+  "topic": "cats",
+  "status": "done",
+  "result": "Background report about cats is ready."
+}
+```
+
+The important behavior is that the HTTP request does **not** wait for the slow operation. The background worker completes it later.
+
+## Stage 3 proof — validation and retries
+
+The special topic `fail` deliberately raises:
 
 ```text
-Hello from the background!
+The report oven is broken!
 ```
-## Stage 2 Ã¢â‚¬â€ Accept fast, work later
 
-`POST /reports` accepts a topic, stores a `pending` report, sends the `report/requested` event, and returns HTTP `202 Accepted` immediately.
+The `make-report` function uses:
 
-The `make-report` Inngest function performs two durable steps:
-1. `do-the-slow-work` Ã¢â‚¬â€ 8-second sleep
-2. `build-report` Ã¢â‚¬â€ saves the result and changes the report to `done`
+```python
+retries=2
+```
 
-Use `GET /reports/{id}` to poll status. The first poll returns `pending`; after the background function completes, the same endpoint returns `done` plus the result. Unknown IDs return `404`.
-## Stage 3 â€” Retries and bad-input rejection
+That produces **3 attempts total**: the initial attempt plus two retries.
 
-The `make-report` function is configured with `retries=2`. A report whose topic is exactly `fail` raises `The report oven is broken!` inside the `build-report` step. Inngest therefore makes three total attempts: the initial attempt plus two retries, using backoff between attempts.
+Final failed report state from the verification run:
 
-A request with a missing, blank, or non-string `topic` is rejected with HTTP `400` before `inngest_client.send(...)` is reached, so no background job is created.
+```json
+{
+  "id": "aa277fbbedd94aa1a4cbe8e5a6704277",
+  "topic": "fail",
+  "status": "failed",
+  "attempts": 3,
+  "error": "The report oven is broken!"
+}
+```
 
-**Why the difference:** invalid input is rejected at the request boundary because retrying bad data cannot make it valid; retries are for work that started with valid input but failed because execution can fail temporarily.
-## Stage 4 — Cron heartbeat
+**Bad input vs transient failure:** invalid input is rejected immediately because retrying invalid data cannot make it valid. Retries are appropriate after valid work has been accepted but execution may fail temporarily.
 
-The `heartbeat` Inngest function is triggered only by this cron schedule:
+## Stage 4 proof — cron heartbeat
+
+The heartbeat trigger is:
 
 ```text
 * * * * *
 ```
 
-That means **every minute**. Each run logs one summary line with the current number of `pending`, `done`, and `failed` reports.
+That means **every minute**. The final verification session observed **2 heartbeat runs**. Each run logs a summary containing the number of reports in `pending`, `done`, and `failed` states.
 
-The clock is the only trigger: there is no request endpoint and no event that starts `heartbeat`.
-
-Cron answers required by the assignment:
+Required cron expressions:
 
 - Every day at 08:00: `0 8 * * *`
 - Every Sunday at 22:00: `0 22 * * 0`
 
-Cron schedules normally run in the scheduler/server timezone unless an explicit timezone is configured, so production schedules should always have their timezone checked.
+The clock is the only trigger for `heartbeat`; there is no API endpoint or event that starts it.
+
+## Dashboard evidence
+
+The screenshot below was captured from the local Inngest Dev Server after the final verification run.
+
+![Inngest Dev Server dashboard](docs/inngest-dashboard.png)
+
+## Architecture
+
+```text
+POST /reports
+    |
+    v
+202 Accepted + report id
+    |
+    v
+report/requested event
+    |
+    v
+Inngest make-report
+    |
+    +--> do-the-slow-work (8 seconds)
+    |
+    +--> build-report
+    |
+    v
+pending -> done
+```
+
+For the deliberate failure path, Inngest retries the function twice before the run ends failed.
+
+## Files
+
+- `main.py` — FastAPI endpoints and the three Inngest functions
+- `requirements.txt` — pinned Python dependencies
+- `docs/inngest-dashboard.png` — dashboard evidence
+- `.gitignore` — excludes the virtual environment, caches, and local Inngest development state
+
+## Submission
+
+This assignment is stored in the `background-job/` folder of the public repository. The implementation was built across separate stage commits so the development history is visible.
