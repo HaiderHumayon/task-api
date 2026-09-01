@@ -1,4 +1,4 @@
-# A3 Ã¢â‚¬â€ Your First Background Job
+# A3 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Your First Background Job
 
 This folder contains the FlyRank backend assignment for building a FastAPI service whose slow work will later run through Inngest.
 
@@ -29,7 +29,7 @@ Expected JSON:
 ```
 
 Later stages will add Inngest, `POST /reports`, the background worker, retry behavior, a status endpoint, and a cron heartbeat.
-## Stage 1 â€” Inngest connected
+## Stage 1 Ã¢â‚¬â€ Inngest connected
 
 The API now exposes the Inngest serve endpoint at `/api/inngest` and registers one function:
 
@@ -39,7 +39,7 @@ The API now exposes the Inngest serve endpoint at `/api/inngest` and registers o
 
 Run the two programs in separate terminals.
 
-### Terminal 1 â€” FastAPI
+### Terminal 1 Ã¢â‚¬â€ FastAPI
 
 ```powershell
 cd C:\Users\haide\task-api\background-job
@@ -47,7 +47,7 @@ $env:INNGEST_DEV="1"
 .\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
 ```
 
-### Terminal 2 â€” Inngest Dev Server
+### Terminal 2 Ã¢â‚¬â€ Inngest Dev Server
 
 ```powershell
 cd C:\Users\haide\task-api\background-job
@@ -73,3 +73,12 @@ The resulting `say-hello` run should show the `wait-five-seconds` sleep step and
 ```text
 Hello from the background!
 ```
+## Stage 2 — Accept fast, work later
+
+`POST /reports` accepts a topic, stores a `pending` report, sends the `report/requested` event, and returns HTTP `202 Accepted` immediately.
+
+The `make-report` Inngest function performs two durable steps:
+1. `do-the-slow-work` — 8-second sleep
+2. `build-report` — saves the result and changes the report to `done`
+
+Use `GET /reports/{id}` to poll status. The first poll returns `pending`; after the background function completes, the same endpoint returns `done` plus the result. Unknown IDs return `404`.
