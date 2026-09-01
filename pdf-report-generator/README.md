@@ -147,3 +147,52 @@ tr {
 ```
 
 This keeps rows from splitting awkwardly and repeats the table header on later PDF pages. `reports/` is generated output and remains ignored by Git.
+## Stage 4 - Generate on demand
+
+The API now stores generated-report metadata in SQLite:
+
+```sql
+CREATE TABLE reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+```
+
+Start the API:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+```
+
+Generate a report synchronously:
+
+```powershell
+curl.exe -i -X POST http://localhost:8000/reports
+```
+
+A successful request returns HTTP `201 Created` with an id and download URL:
+
+```json
+{
+  "id": 1,
+  "created_at": "2026-09-02T00:00:00+00:00",
+  "file_url": "/reports/1/file"
+}
+```
+
+Read report metadata:
+
+```powershell
+curl.exe http://localhost:8000/reports/1
+```
+
+Download the PDF:
+
+```powershell
+curl.exe http://localhost:8000/reports/1/file --output report.pdf
+```
+
+Unknown report IDs return HTTP `404`.
+
+At this stage the endpoint is intentionally synchronous: the SQL queries, HTML rendering, PDF creation, and metadata insert all complete as part of `POST /reports`.
