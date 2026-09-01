@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from src.llm.client import complete_enrichment
+from src.llm.processor import ModelOutputRejected, enrich_with_validation
 from src.llm.schema import EnrichRequest, EnrichResponse
 
 router = APIRouter(tags=["Week 7 LLM enrichment"])
@@ -30,6 +30,7 @@ def _input_error(exc: ValidationError) -> JSONResponse:
 
 @router.post(
     "/enrich",
+    response_model=EnrichResponse,
     summary="Enrich one scraped book record",
 )
 async def enrich_book(request: Request):
@@ -50,27 +51,24 @@ async def enrich_book(request: Request):
         return _input_error(exc)
 
     if os.getenv("LLM_STUB", "0") == "1":
-        stub = EnrichResponse(
+        return EnrichResponse(
             category="fiction",
             summary=(
                 f"{payload.title} is a fictional work represented by "
-                "synthetic Stage 1 enrichment data."
+                "synthetic enrichment data."
             ),
             confidence=0.95,
             quality_flags=["none"],
             needs_review=False,
         )
-        return stub.model_dump(mode="json")
 
-    # Stage 2 deliberately exposes the raw answer for inspection.
-    # Stage 3 replaces this with parse + schema validation + repair.
-    raw_model_output = complete_enrichment(
-        title=payload.title,
-        description=payload.description,
-    )
-
-    return {
-        "stage": 2,
-        "prompt_version": "book-enrich-v1",
-        "raw_model_output": raw_model_output,
-    }
+    try:
+        return enrich_with_validation(payload)
+    except ModelOutputRejected as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "Model output failed validation",
+                "detail": exc.message,
+            },
+        )

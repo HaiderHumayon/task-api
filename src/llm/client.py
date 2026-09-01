@@ -23,14 +23,59 @@ def create_client() -> OpenAI:
     )
 
 
-def complete_enrichment(*, title: str, description: str) -> str:
-    system_prompt = load_system_prompt()
-
-    user_record = json.dumps(
+def _record_message(*, title: str, description: str) -> str:
+    return json.dumps(
         {
             "source": "scraped_book_record",
             "title": title,
             "description": description,
+        },
+        ensure_ascii=False,
+    )
+
+
+def complete_enrichment(*, title: str, description: str) -> str:
+    response = create_client().chat.completions.create(
+        model=os.environ["LLM_MODEL"],
+        messages=[
+            {
+                "role": "system",
+                "content": load_system_prompt(),
+            },
+            {
+                "role": "user",
+                "content": _record_message(
+                    title=title,
+                    description=description,
+                ),
+            },
+        ],
+        temperature=0,
+    )
+
+    return response.choices[0].message.content or ""
+
+
+def repair_enrichment(
+    *,
+    title: str,
+    description: str,
+    broken_output: str,
+    validation_error: str,
+) -> str:
+    repair_message = json.dumps(
+        {
+            "task": "repair_previous_answer",
+            "original_record": {
+                "title": title,
+                "description": description,
+            },
+            "broken_output": broken_output,
+            "validation_error": validation_error,
+            "instruction": (
+                "Your previous answer was rejected for this reason. "
+                "Return only corrected JSON matching the schema."
+            ),
         },
         ensure_ascii=False,
     )
@@ -40,11 +85,11 @@ def complete_enrichment(*, title: str, description: str) -> str:
         messages=[
             {
                 "role": "system",
-                "content": system_prompt,
+                "content": load_system_prompt(),
             },
             {
                 "role": "user",
-                "content": user_record,
+                "content": repair_message,
             },
         ],
         temperature=0,

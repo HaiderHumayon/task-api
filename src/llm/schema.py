@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class BookCategory(str, Enum):
@@ -24,6 +24,8 @@ class QualityFlag(str, Enum):
 
 
 class EnrichRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=3000)
 
@@ -37,6 +39,8 @@ class EnrichRequest(BaseModel):
 
 
 class EnrichResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     category: BookCategory
     summary: str = Field(min_length=1, max_length=240)
     confidence: float = Field(ge=0.0, le=1.0)
