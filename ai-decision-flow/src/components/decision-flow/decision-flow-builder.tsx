@@ -23,17 +23,27 @@ import "@xyflow/react/dist/style.css";
 import {
   Activity,
   Cable,
+  Download,
   Check,
   CircleStop,
   Clock3,
+  FileUp,
+  FolderOpen,
   GitBranch,
   MousePointer2,
   Network,
   Play,
   Plus,
+  Save,
   Sparkles,
   X,
 } from "lucide-react";
+
+import {
+  GRAPH_STORAGE_KEY,
+  parsePortableGraph,
+  serializeGraph,
+} from "@/lib/graph-persistence";
 
 import { DecisionNode } from "./decision-node";
 import type {
@@ -302,6 +312,16 @@ export function DecisionFlowBuilder() {
     setActiveEventId,
   ] =
     useState<string | null>(
+      null,
+    );
+  const [
+    persistenceMessage,
+    setPersistenceMessage,
+  ] = useState(
+    "Workflow has not been saved in this browser yet.",
+  );
+  const importInputRef =
+    useRef<HTMLInputElement | null>(
       null,
     );
 
@@ -739,6 +759,225 @@ export function DecisionFlowBuilder() {
     };
   }, [activeEventId]);
 
+  const applyPortableGraph =
+    useCallback(
+      (input: unknown) => {
+        const parsed =
+          parsePortableGraph(
+            input,
+          );
+
+        const restoredNodes:
+          DecisionFlowNode[] =
+          parsed.nodes.map(
+            (node) => ({
+              id: node.id,
+              type: "decision",
+              position:
+                node.position,
+              data: {
+                title:
+                  node.data
+                    .title,
+                prompt:
+                  node.data
+                    .prompt,
+              },
+            }),
+          );
+
+        const restoredEdges:
+          DecisionFlowEdge[] =
+          parsed.edges.map(
+            (edge) =>
+              makeBranchEdge({
+                id: edge.id,
+                source:
+                  edge.source,
+                target:
+                  edge.target,
+                branch:
+                  edge.branch,
+              }),
+          );
+
+        setNodes(
+          restoredNodes,
+        );
+        setEdges(
+          restoredEdges,
+        );
+        setRunState(null);
+        setActiveEventId(
+          null,
+        );
+        setSelectedNodeId(
+          restoredNodes[0]
+            ?.id ?? null,
+        );
+
+        const nodeNumbers =
+          restoredNodes
+            .map((node) => {
+              const match =
+                node.id.match(
+                  /^decision-(\d+)$/,
+                );
+              return match
+                ? Number(
+                    match[1],
+                  )
+                : 0;
+            });
+
+        nextNodeNumber.current =
+          Math.max(
+            0,
+            ...nodeNumbers,
+          ) + 1;
+
+        nextEdgeNumber.current =
+          restoredEdges.length +
+          1;
+
+        return parsed;
+      },
+      [
+        setEdges,
+        setNodes,
+      ],
+    );
+
+  const saveGraph =
+    useCallback(() => {
+      const snapshot =
+        serializeGraph(
+          nodes,
+          edges,
+        );
+
+      localStorage.setItem(
+        GRAPH_STORAGE_KEY,
+        JSON.stringify(
+          snapshot,
+        ),
+      );
+
+      setPersistenceMessage(
+        `Saved ${snapshot.nodes.length} node(s) and ${snapshot.edges.length} branch(es) at ${new Date(snapshot.savedAt).toLocaleTimeString()}.`,
+      );
+    }, [edges, nodes]);
+
+  const loadGraph =
+    useCallback(() => {
+      const raw =
+        localStorage.getItem(
+          GRAPH_STORAGE_KEY,
+        );
+
+      if (!raw) {
+        setPersistenceMessage(
+          "No saved workflow exists in this browser.",
+        );
+        return;
+      }
+
+      try {
+        const parsed =
+          applyPortableGraph(
+            JSON.parse(raw),
+          );
+
+        setPersistenceMessage(
+          `Loaded browser save from ${new Date(parsed.savedAt).toLocaleString()}.`,
+        );
+      } catch (error) {
+        setPersistenceMessage(
+          error instanceof Error
+            ? error.message
+            : "Saved workflow could not be loaded.",
+        );
+      }
+    }, [applyPortableGraph]);
+
+  const exportGraph =
+    useCallback(() => {
+      const snapshot =
+        serializeGraph(
+          nodes,
+          edges,
+        );
+
+      const blob =
+        new Blob(
+          [
+            JSON.stringify(
+              snapshot,
+              null,
+              2,
+            ),
+          ],
+          {
+            type:
+              "application/json",
+          },
+        );
+
+      const url =
+        URL.createObjectURL(
+          blob,
+        );
+      const anchor =
+        document.createElement(
+          "a",
+        );
+
+      anchor.href = url;
+      anchor.download =
+        "ai-decision-flow.json";
+      anchor.click();
+
+      URL.revokeObjectURL(
+        url,
+      );
+
+      setPersistenceMessage(
+        `Exported ${snapshot.nodes.length} node(s) as JSON.`,
+      );
+    }, [edges, nodes]);
+
+  const importGraphFile =
+    useCallback(
+      async (
+        file:
+          File | undefined,
+      ) => {
+        if (!file) {
+          return;
+        }
+
+        try {
+          const text =
+            await file.text();
+
+          const parsed =
+            applyPortableGraph(
+              JSON.parse(text),
+            );
+
+          setPersistenceMessage(
+            `Imported ${parsed.nodes.length} node(s) and ${parsed.edges.length} branch(es) from ${file.name}.`,
+          );
+        } catch (error) {
+          setPersistenceMessage(
+            error instanceof Error
+              ? error.message
+              : "Workflow JSON import failed.",
+          );
+        }
+      },
+      [applyPortableGraph],
+    );
   const selectedNode =
     nodes.find(
       (node) =>
@@ -780,16 +1019,68 @@ export function DecisionFlowBuilder() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={saveGraph}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm font-semibold text-white transition hover:border-slate-600"
+            >
+              <Save size={16} />
+              Save
+            </button>
+
+            <button
+              type="button"
+              onClick={loadGraph}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm font-semibold text-white transition hover:border-slate-600"
+            >
+              <FolderOpen size={16} />
+              Load
+            </button>
+
+            <button
+              type="button"
+              onClick={exportGraph}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm font-semibold text-white transition hover:border-slate-600"
+            >
+              <Download size={16} />
+              Export JSON
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                importInputRef.current?.click();
+              }}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm font-semibold text-white transition hover:border-slate-600"
+            >
+              <FileUp size={16} />
+              Import JSON
+            </button>
+
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(event) => {
+                void importGraphFile(
+                  event.target.files?.[0],
+                );
+                event.currentTarget.value =
+                  "";
+              }}
+            />
+
             <button
               type="button"
               onClick={
                 addDecisionNode
               }
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:border-slate-600"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm font-semibold text-white transition hover:border-slate-600"
             >
-              <Plus size={17} />
-              Add decision node
+              <Plus size={16} />
+              Add node
             </button>
 
             <button
@@ -899,6 +1190,27 @@ export function DecisionFlowBuilder() {
         </section>
 
         <aside className="space-y-5">
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
+            <div className="flex items-center gap-2">
+              <Save
+                size={17}
+                className="text-violet-300"
+              />
+              <h2 className="font-semibold text-white">
+                Workflow persistence
+              </h2>
+            </div>
+
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Save to this browser or move the workflow between machines with
+              the portable JSON format.
+            </p>
+
+            <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs leading-5 text-slate-300">
+              {persistenceMessage}
+            </div>
+          </section>
+
           <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -1115,24 +1427,24 @@ export function DecisionFlowBuilder() {
                 className="text-violet-300"
               />
               <h2 className="font-semibold text-white">
-                Stage 5 checkpoint
+                Stage 6 checkpoint
               </h2>
             </div>
 
             <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-400">
-              <li>✓ queued / running / completed / failed state</li>
-              <li>✓ active node highlight</li>
-              <li>✓ visited node styling</li>
-              <li>✓ traversed edge highlighting</li>
-              <li>✓ execution-order chips</li>
-              <li>✓ live run log</li>
-              <li>✓ per-node YES / NO result badge</li>
-              <li>✓ polling by Inngest event ID</li>
+              <li>✓ browser save / load</li>
+              <li>✓ portable JSON export</li>
+              <li>✓ validated JSON import</li>
+              <li>✓ duplicate-node validation</li>
+              <li>✓ missing-node edge validation</li>
+              <li>✓ duplicate YES / NO branch validation</li>
+              <li>✓ imported graph resets stale execution state</li>
+              <li>✓ execution UI from Stage 5 preserved</li>
             </ul>
 
             <p className="mt-4 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3 text-xs leading-5 text-violet-200">
-              Next: persistence, JSON import/export, final validation, live proof,
-              and submission documentation.
+              Next: real LLM + Inngest live proof, evidence capture, final README,
+              and submission audit.
             </p>
           </section>
         </aside>

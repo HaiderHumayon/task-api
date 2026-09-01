@@ -287,3 +287,63 @@ and renders:
 - terminal/failure state
 
 The state store is intentionally lightweight and process-local for this internship assignment. A production multi-instance deployment would move execution state to a shared persistent store such as PostgreSQL, Redis, or another durable database.
+## Stage 6 — save, load, import, export
+
+The graph is now portable and recoverable.
+
+### Browser save/load
+
+`Save` writes a clean workflow snapshot to `localStorage` under:
+
+```text
+ai-decision-flow:graph:v1
+```
+
+`Load` restores the saved graph.
+
+Execution-only UI state is deliberately excluded from the saved workflow.
+
+### JSON export/import
+
+`Export JSON` downloads:
+
+```text
+ai-decision-flow.json
+```
+
+The portable format contains:
+
+- format version
+- save timestamp
+- decision node IDs
+- node positions
+- node titles
+- node prompts
+- branch edge IDs
+- source/target node IDs
+- YES/NO branch values
+
+`Import JSON` validates the file before replacing the current graph.
+
+Import validation rejects:
+
+- unsupported format versions
+- malformed nodes
+- duplicate node IDs
+- malformed edges
+- edges referencing missing nodes
+- self-loops
+- more than one YES branch from a source node
+- more than one NO branch from a source node
+
+Importing or loading a workflow clears stale execution-state overlays before the restored graph is displayed.
+
+At this point the assignment includes multiple polish features beyond the required canvas:
+
+1. live execution state and logs
+2. active/visited path visualization
+3. browser save/load
+4. JSON import/export
+5. error validation and Inngest retries
+
+The remaining checkpoint is final live proof with an actual configured LLM and the local Inngest Dev Server.
