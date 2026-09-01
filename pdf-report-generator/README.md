@@ -110,3 +110,40 @@ ORDER BY rating ASC;
 ```
 
 The function also loads the complete 60-book table so the next stage can render a multi-page PDF without duplicating database logic.
+## Stage 3 - HTML to PDF
+
+`pdf_renderer.py` turns the Stage 2 aggregation data into an HTML report and uses headless Chromium through Playwright to print it as an A4 PDF.
+
+Generate the checkpoint file:
+
+```powershell
+.\.venv\Scripts\python.exe pdf_renderer.py --output reports/test.pdf
+```
+
+The renderer uses:
+
+```python
+page.pdf(
+    path=str(output_path),
+    format="A4",
+    print_background=True,
+    prefer_css_page_size=True,
+)
+```
+
+The report includes summary metrics, the five most expensive books, rating counts, and the complete 60-book table.
+
+Print-safe table CSS includes:
+
+```css
+thead {
+  display: table-header-group;
+}
+
+tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+```
+
+This keeps rows from splitting awkwardly and repeats the table header on later PDF pages. `reports/` is generated output and remains ignored by Git.
