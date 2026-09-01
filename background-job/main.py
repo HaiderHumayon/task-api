@@ -13,10 +13,12 @@ import inngest.fast_api
 reports: dict[str, dict[str, Any]] = {}
 failure_attempts: dict[str, int] = {}
 
+logger = logging.getLogger("uvicorn")
+
 
 inngest_client = inngest.Inngest(
     app_id="report-api",
-    logger=logging.getLogger("uvicorn"),
+    logger=logger,
 )
 
 
@@ -72,9 +74,40 @@ async def make_report(ctx: inngest.Context) -> dict[str, Any]:
     return await ctx.step.run("build-report", build_report)
 
 
+@inngest_client.create_function(
+    fn_id="heartbeat",
+    trigger=inngest.TriggerCron(cron="* * * * *"),
+    retries=0,
+)
+async def heartbeat(ctx: inngest.Context) -> dict[str, int]:
+    counts = {
+        "pending": sum(
+            1 for report in reports.values()
+            if report.get("status") == "pending"
+        ),
+        "done": sum(
+            1 for report in reports.values()
+            if report.get("status") == "done"
+        ),
+        "failed": sum(
+            1 for report in reports.values()
+            if report.get("status") == "failed"
+        ),
+    }
+
+    logger.info(
+        "HEARTBEAT pending=%s done=%s failed=%s",
+        counts["pending"],
+        counts["done"],
+        counts["failed"],
+    )
+
+    return counts
+
+
 app = FastAPI(
     title="A3 Background Job API",
-    version="0.4.0",
+    version="0.5.0",
 )
 
 
@@ -139,5 +172,6 @@ inngest.fast_api.serve(
     [
         say_hello,
         make_report,
+        heartbeat,
     ],
 )
