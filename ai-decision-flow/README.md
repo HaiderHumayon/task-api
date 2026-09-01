@@ -149,3 +149,51 @@ Additional Stage 2 rules:
 This means the graph is now executable in principle: once a decision produces `YES` or `NO`, the workflow can select the edge whose `data.branch` matches that result.
 
 Stage 3 sends this graph to Inngest and implements deterministic traversal with a durable step for each visited node.
+## Stage 3 — Inngest traversal
+
+The graph is now dispatchable as an Inngest event:
+
+```text
+decision-flow/execute
+```
+
+`POST /api/execute` validates the graph and sends the event to Inngest.
+
+The event contains:
+
+- nodes
+- edges
+- start node ID
+- deterministic Stage 3 decision values
+
+The registered `execute-decision-flow` Inngest function:
+
+1. starts at `startNodeId`
+2. runs each visited node inside its own durable `step.run(...)`
+3. records the node ID in `executionOrder`
+4. reads the node's Stage 3 deterministic `YES` or `NO`
+5. finds the outgoing edge whose `branch` matches that decision
+6. follows the edge to the next node
+7. stops when no matching outgoing branch exists
+8. rejects cycles
+
+The Stage 3 UI exposes `Test YES path` and `Test NO path` buttons. These deterministic values exist only to prove traversal before LLM integration.
+
+For local execution, run the Next.js app with Inngest development mode and start the Inngest Dev Server in a second terminal:
+
+```powershell
+$env:INNGEST_DEV="1"
+npm run dev
+```
+
+```powershell
+npx --ignore-scripts=false inngest-cli@latest dev -u http://localhost:3000/api/inngest
+```
+
+The local Inngest dashboard is available at:
+
+```text
+http://localhost:8288
+```
+
+Stage 4 replaces the deterministic decision map with an OpenAI SDK call at each visited node and validates a strict `YES` or `NO` response.

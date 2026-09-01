@@ -26,6 +26,7 @@ import {
   GitBranch,
   MousePointer2,
   Network,
+  Play,
   Plus,
   Sparkles,
   X,
@@ -191,6 +192,10 @@ export function DecisionFlowBuilder() {
     useState(
       "Connect from the green YES or red NO handle.",
     );
+  const [dispatchMessage, setDispatchMessage] =
+    useState("No workflow run dispatched yet.");
+  const [isDispatching, setIsDispatching] =
+    useState(false);
   const nextNodeNumber = useRef(4);
   const nextEdgeNumber = useRef(3);
 
@@ -321,6 +326,82 @@ export function DecisionFlowBuilder() {
     );
   }, [setNodes]);
 
+  const dispatchTestRun = useCallback(
+    async (branch: BranchType) => {
+      if (nodes.length === 0) {
+        setDispatchMessage(
+          "Add at least one node before running.",
+        );
+        return;
+      }
+
+      setIsDispatching(true);
+      setDispatchMessage(
+        `Dispatching deterministic ${branch} test run...`,
+      );
+
+      try {
+        const payload = {
+          nodes: nodes.map((node) => ({
+            id: node.id,
+            title: node.data.title,
+            prompt: node.data.prompt,
+          })),
+          edges: edges.map((edge) => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            branch: edge.data?.branch,
+          })),
+          startNodeId: nodes[0].id,
+          decisions: Object.fromEntries(
+            nodes.map((node) => [
+              node.id,
+              branch,
+            ]),
+          ),
+        };
+
+        const response = await fetch(
+          "/api/execute",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify(payload),
+          },
+        );
+
+        const result = (await response.json()) as {
+          accepted?: boolean;
+          eventId?: string | null;
+          error?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(
+            result.error ??
+              `Dispatch failed with HTTP ${response.status}.`,
+          );
+        }
+
+        setDispatchMessage(
+          `Accepted by Inngest · event ${result.eventId ?? "queued"} · ${branch} test decisions`,
+        );
+      } catch (error) {
+        setDispatchMessage(
+          error instanceof Error
+            ? error.message
+            : "Workflow dispatch failed.",
+        );
+      } finally {
+        setIsDispatching(false);
+      }
+    },
+    [edges, nodes],
+  );
   const selectedNode = nodes.find(
     (node) => node.id === selectedNodeId,
   );
@@ -535,22 +616,68 @@ export function DecisionFlowBuilder() {
           </section>
 
           <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
+            <div className="flex items-center gap-2">
+              <Play
+                size={17}
+                className="text-amber-300"
+              />
+              <h2 className="font-semibold text-white">
+                Inngest test run
+              </h2>
+            </div>
+
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Stage 3 uses deterministic decisions so traversal can be tested
+              before the LLM is connected.
+            </p>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={isDispatching}
+                onClick={() => {
+                  void dispatchTestRun("YES");
+                }}
+                className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Test YES path
+              </button>
+
+              <button
+                type="button"
+                disabled={isDispatching}
+                onClick={() => {
+                  void dispatchTestRun("NO");
+                }}
+                className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Test NO path
+              </button>
+            </div>
+
+            <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs leading-5 text-slate-300">
+              {dispatchMessage}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
             <h2 className="font-semibold text-white">
-              Stage 2 checkpoint
+              Stage 3 checkpoint
             </h2>
 
             <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-400">
-              <li>✓ Separate YES / NO handles</li>
-              <li>✓ Branch value stored in edge data</li>
-              <li>✓ Labeled, color-coded branches</li>
-              <li>✓ Duplicate branch prevention</li>
-              <li>✓ Self-loop prevention</li>
-              <li>✓ Branch counts</li>
+              <li>✓ Typed Inngest execution event</li>
+              <li>✓ POST /api/execute dispatcher</li>
+              <li>✓ Graph validation before dispatch</li>
+              <li>✓ One step.run per visited node</li>
+              <li>✓ YES / NO edge traversal</li>
+              <li>✓ Execution-order tracking</li>
+              <li>✓ Cycle protection</li>
             </ul>
 
             <p className="mt-4 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3 text-xs leading-5 text-violet-200">
-              Next: send the graph into Inngest and traverse the matching branch
-              after each decision step.
+              Next: replace deterministic test decisions with a real LLM call
+              that must return only YES or NO.
             </p>
           </section>
         </aside>
