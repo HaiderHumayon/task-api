@@ -41,3 +41,34 @@ Expected body:
 ```
 
 Later stages add SQLite seeding, aggregation queries, HTML-to-PDF rendering, report records, download links, and once-per-day idempotency.
+## Stage 1 - Data worth reporting on
+
+This project uses the bookstore dataset from `../scraper/output/books.json`.
+
+The SQLite schema is:
+
+```sql
+CREATE TABLE books (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    price REAL NOT NULL,
+    rating INTEGER NOT NULL,
+    url TEXT NOT NULL UNIQUE
+);
+```
+
+Seed the database:
+
+```powershell
+.\.venv\Scripts\python.exe seed.py
+```
+
+`seed.py` converts the scraper's `rating_text` values (`One` through `Five`) into integers `1` through `5`.
+
+The script starts with `DELETE FROM books`, so running the seed twice does not duplicate development data. Both runs finish with:
+
+```text
+SELECT COUNT(*) FROM books -> 60
+```
+
+The generated `report.db` is intentionally ignored by Git. The committed seed script is the reproducible recipe.
